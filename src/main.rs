@@ -24,6 +24,8 @@ use std::time::{Duration, Instant};
 const FALLBACK_RENDER_HZ: u64 = 60;
 
 fn main() -> Result<(), String> {
+    debug_assert!(geometry::ROAD_WIDTH > geometry::LANE_W);
+
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let (mut canvas, vsync_active) = create_canvas(&video)?;
@@ -121,7 +123,7 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn fitted_window_size(video: &sdl2::VideoSubsystem) -> (u32, u32) {
+fn create_window(video: &sdl2::VideoSubsystem) -> Result<Window, String> {
     let usable = video
         .display_usable_bounds(0)
         .map(|bounds| (bounds.width(), bounds.height()))
@@ -129,14 +131,9 @@ fn fitted_window_size(video: &sdl2::VideoSubsystem) -> (u32, u32) {
     let scale = (usable.0 as f64 / CANVAS_W as f64)
         .min(usable.1 as f64 / H as f64)
         .min(1.0);
-    (
-        (CANVAS_W as f64 * scale).floor().max(1.0) as u32,
-        (H as f64 * scale).floor().max(1.0) as u32,
-    )
-}
+    let width = (CANVAS_W as f64 * scale).floor().max(1.0) as u32;
+    let height = (H as f64 * scale).floor().max(1.0) as u32;
 
-fn create_window(video: &sdl2::VideoSubsystem) -> Result<Window, String> {
-    let (width, height) = fitted_window_size(video);
     video
         .window("Smart Road", width, height)
         .position_centered()
