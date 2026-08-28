@@ -15,7 +15,8 @@ pub const END: f64 = H as f64 + 50.0;
 pub const CAR_LEN: f64 = 30.0;
 pub const CAR_W: f64 = 17.0;
 pub const SAFETY_GAP: f64 = 14.0;
-pub const FOLLOW_DISTANCE: f64 = 66.0;
+// Extra curvature allowance keeps rotated OBBs separated on the 40 px left-turn radius.
+pub const FOLLOW_DISTANCE: f64 = CAR_LEN + SAFETY_GAP + 22.0;
 
 pub const FIXED_HZ: u32 = 60;
 pub const FIXED_DT: f64 = 1.0 / FIXED_HZ as f64;
