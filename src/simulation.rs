@@ -7,7 +7,7 @@ use crate::geometry::{
 };
 use crate::stats::Statistics;
 use crate::vehicle::Vehicle;
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{seq::SliceRandom, thread_rng, Rng};
 
 const EPSILON: f64 = 1.0e-6;
 const STOP_MARGIN: f64 = 8.0;
@@ -60,13 +60,18 @@ impl Sim {
     }
 
     pub fn spawn_random(&mut self) -> bool {
+        let mut rng = thread_rng();
+        self.spawn_random_with_rng(&mut rng)
+    }
+
+    fn spawn_random_with_rng<R: Rng + ?Sized>(&mut self, rng: &mut R) -> bool {
         let mut movements = Vec::with_capacity(MOVEMENT_COUNT);
         for origin in 0..4 {
             for route in Route::ALL {
                 movements.push((origin, route));
             }
         }
-        movements.shuffle(&mut thread_rng());
+        movements.shuffle(rng);
         for (origin, route) in movements {
             if self.spawn_exact(origin, route) {
                 return true;
@@ -315,6 +320,7 @@ fn approach_velocity(current: f64, target: f64, max_acceleration: f64, max_braki
 mod tests {
     use super::*;
     use crate::geometry::{FIXED_HZ, SPEED_STOP};
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[test]
     fn three_target_velocity_levels_exist() {
@@ -347,48 +353,32 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_one_minute_soak_stays_safe_and_below_congestion_limit() {
-        let mut sim = Sim::new();
-        let schedule: [(usize, Route); 12] = [
-            (0, Route::Right),
-            (2, Route::Straight),
-            (1, Route::Left),
-            (3, Route::Right),
-            (0, Route::Straight),
-            (2, Route::Left),
-            (1, Route::Right),
-            (3, Route::Straight),
-            (0, Route::Left),
-            (2, Route::Right),
-            (1, Route::Straight),
-            (3, Route::Left),
-        ];
-        let total_ticks = FIXED_HZ as u64 * 60;
-        let mut next_spawn = 0_u64;
-        let mut schedule_index = 0_usize;
+    fn seeded_random_soak_stays_safe_and_below_congestion_limit() {
+        for seed in [1_u64, 42, 20_260_828] {
+            let mut sim = Sim::new();
+            let mut rng = StdRng::seed_from_u64(seed);
+            let total_ticks = FIXED_HZ as u64 * 60;
 
-        for tick in 0..total_ticks {
-            if tick >= next_spawn {
-                let (origin, route) = schedule[schedule_index % schedule.len()];
-                let _ = sim.spawn_exact(origin, route);
-                schedule_index += 1;
-                next_spawn += AUTO_SPAWN_TICKS;
+            for _ in 0..total_ticks {
+                sim.step();
+                if sim.auto_spawn_due() {
+                    let _ = sim.spawn_random_with_rng(&mut rng);
+                }
             }
-            sim.step();
-        }
 
-        assert_eq!(sim.stats.collisions, 0);
-        assert_eq!(sim.stats.close_calls, 0);
-        assert_eq!(sim.stats.emergency_clamps, 0);
-        assert!(
-            sim.stats.peak_lane_queue < 8,
-            "peak lane queue reached {}",
-            sim.stats.peak_lane_queue
-        );
-        assert!(
-            sim.stats.peak_approach_vehicles < 8,
-            "peak approach load reached {}",
-            sim.stats.peak_approach_vehicles
-        );
+            assert_eq!(sim.stats.collisions, 0, "seed {seed}");
+            assert_eq!(sim.stats.close_calls, 0, "seed {seed}");
+            assert_eq!(sim.stats.emergency_clamps, 0, "seed {seed}");
+            assert!(
+                sim.stats.peak_lane_queue < 8,
+                "seed {seed}: peak lane queue reached {}",
+                sim.stats.peak_lane_queue
+            );
+            assert!(
+                sim.stats.peak_approach_vehicles < 8,
+                "seed {seed}: peak approach load reached {}",
+                sim.stats.peak_approach_vehicles
+            );
+        }
     }
 }
