@@ -113,7 +113,9 @@ The safety model includes:
 - close-call detection;
 - collision detection as an independent diagnostic metric.
 
-A follower is never allowed to advance beyond the configured safe progress behind its leader. This longitudinal safety layer remains active even when several vehicles of the same movement are reserved at once.
+The `66 px` following distance is not an arbitrary constant: it is `30 px` vehicle length + `14 px` safety gap + `22 px` curvature allowance. The extra allowance keeps rotated OBBs separated on the tight `40 px` left-turn radius.
+
+A follower normally stays behind its leader through braking-speed control. Position clamps remain only as emergency invariants: an unreserved vehicle cannot cross its stop boundary and a follower cannot cross the protected following limit.
 
 ## ⚙️ Vehicle model
 
@@ -131,29 +133,33 @@ SLOW    =  50 px/s
 CRUISE  = 120 px/s
 ```
 
-Velocity does not jump directly between controller targets. Each vehicle also owns its own acceleration and braking limits. Three deterministic vehicle profiles are rotated across spawned cars, so different cars take different amounts of time to accelerate and brake.
+Velocity does not jump directly between controller targets. Each vehicle owns individual acceleration and braking limits derived from stable pseudo-random factors in the `0.80..1.25` range. The factors depend only on vehicle ID, so cars have different dynamics while deterministic scenarios remain reproducible.
 
-The nominal profile is based on:
+Nominal dynamics are:
 
 ```text
 acceleration = 100 px/s²
 braking      = 180 px/s²
 ```
 
-with slower and stronger-response profiles around those values.
+Before a stop boundary or a slower leader, the simulation applies a kinematic speed ceiling based on the vehicle's own braking capability:
+
+```text
+v_limit = sqrt(2 × braking × remaining_distance)
+```
+
+An additional `8 px` stopping margin keeps the normal braking path clear of the emergency position guards. This prevents followers from visually snapping from cruise speed to zero when a queue forms.
 
 ## 📊 Statistics
 
-Pressing `Esc` ends the simulation and opens a final statistics screen inside the SDL window.
+Pressing `Esc` ends the simulation and opens a final statistics screen inside the SDL window. The required labels use the assignment wording directly, including:
 
-Required metrics:
-
-- vehicles passed;
-- maximum velocity;
-- minimum velocity;
-- maximum traversal time;
-- minimum traversal time;
-- close calls.
+- `Max number of vehicles that passed the intersection`;
+- `Max velocity`;
+- `Min velocity`;
+- `Max time that took a vehicle to pass the intersection`;
+- `Min time that took a vehicle to pass the intersection`;
+- `Close calls`.
 
 Additional metrics:
 
@@ -161,8 +167,10 @@ Additional metrics:
 - vehicles spawned;
 - rejected spawn attempts;
 - peak number of vehicles on the road;
-- real peak queue size in one lane before the conflict area;
+- real peak slow/stopped queue size in one lane;
+- conservative peak number of vehicles on one approach;
 - detected collisions;
+- emergency safety-clamp activations;
 - average controlled traversal time;
 - average travelled distance.
 
@@ -182,9 +190,9 @@ The suite covers:
 - three distinct entry lanes per direction;
 - symmetric conflict geometry with no self-conflict;
 - protected spawn spacing;
-- different per-vehicle acceleration/braking profiles;
+- individual per-vehicle acceleration/braking profiles;
 - an isolated vehicle crossing an empty intersection without unnecessary slow-down;
-- a deterministic 60-second high-rate traffic soak scenario asserting zero collisions, zero close calls and a peak lane queue below the audit congestion threshold.
+- a deterministic 60-second high-rate traffic soak scenario asserting zero collisions, zero close calls, zero emergency clamps, a real queue below 8 and a conservative approach load below 8.
 
 For the visual/audit run, `R` should also be left enabled for at least one minute and the live `COLLISIONS`, `CLOSE CALLS` and queue behavior observed directly.
 
@@ -197,7 +205,7 @@ The SDL2 renderer provides:
 - vehicle sprites loaded from `assets/cars.bmp`;
 - blinking left/right turn signals;
 - a live control/statistics panel;
-- an in-window final statistics screen;
+- an in-window final statistics screen that redraws while it is open;
 - automatic logical scaling to the available window size.
 
 Turning is represented by curved route geometry and continuous vehicle heading, so cars rotate through the maneuver instead of sliding sideways.
@@ -243,7 +251,7 @@ Main responsibilities:
 
 - `geometry` defines immutable paths, safety constants and the conflict matrix;
 - `controller` grants and releases reservations;
-- `simulation` owns the fixed-timestep update and longitudinal following;
+- `simulation` owns the fixed-timestep update, kinematic braking and longitudinal following;
 - `vehicle` stores per-car motion and braking characteristics;
 - `collision` implements OBB/SAT geometry;
 - `stats` collects runtime and final metrics;
