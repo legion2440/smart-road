@@ -13,6 +13,7 @@ A Rust/SDL2 simulation of an autonomous **smart intersection without traffic lig
 - [🛡️ Safety model](#️-safety-model)
 - [⚙️ Vehicle model](#️-vehicle-model)
 - [📊 Statistics](#-statistics)
+- [🧪 Tests and verification](#-tests-and-verification)
 - [🎨 Visualization](#-visualization)
 - [🏗️ Architecture](#️-architecture)
 - [📁 Project structure](#-project-structure)
@@ -52,11 +53,7 @@ The first build takes longer because the bundled SDL2 library is compiled togeth
 cargo build --release
 ```
 
-Run the optimized binary from:
-
-```text
-target/release/smart-road
-```
+The optimized binary is created under `target/release/`.
 
 ## 📝 About
 
@@ -66,11 +63,11 @@ The simulation models a four-way intersection where every incoming direction has
 - straight;
 - left turn.
 
-A vehicle receives its route when it is spawned and never changes it. There are no traffic-light phases. Instead, approaching vehicles enter a controlled zone, request access to the intersection and adjust their speed according to the current reservations.
+A vehicle receives its route when it is spawned and never changes it. There are no traffic-light phases. Approaching vehicles enter a controlled zone, request access to the intersection and adjust their speed according to active reservations.
 
-Several non-conflicting movements can cross at the same time. Conflicting movements are kept outside the conflict area until they can be admitted safely.
+Several non-conflicting movements can cross at the same time. Conflicting movements remain outside the conflict area until they can be admitted safely. Vehicles on the exact same movement may form a controlled convoy because longitudinal following distance is enforced separately.
 
-The simulation runs on a deterministic fixed physics timestep of `60 Hz`, while rendering is synchronized separately through SDL2 VSync when available.
+The simulation uses a fixed `60 Hz` physics timestep. Rendering is synchronized independently through SDL2 VSync when available.
 
 ## 🚗 Controls
 
@@ -83,47 +80,44 @@ The simulation runs on a deterministic fixed physics timestep of `60 Hz`, while 
 | `R` | Toggle continuous random vehicle generation |
 | `Space` | Pause / resume simulation |
 | `Backspace` | Reset the simulation |
-| `Esc` | Exit and show final statistics |
+| `Esc` | End the simulation and show final statistics |
 
 Each manually spawned vehicle receives one of the three legal routes for its incoming direction. Spawn validation prevents a new vehicle from being placed on top of an existing one.
 
 ## 🧠 Smart intersection algorithm
 
-The traffic controller is based on **movement reservations**, not traffic-light phases.
+The controller is based on **movement reservations**, not traffic-light phases.
 
-For every vehicle entering the smart-control area:
+1. A vehicle is detected before the physical intersection.
+2. Its immutable origin and route determine one of 12 possible movements.
+3. A precomputed conflict matrix describes which different movements overlap inside the conflict area.
+4. The front waiting vehicle of each movement becomes a reservation candidate.
+5. Candidates are ranked by waiting time and queue pressure.
+6. Reservations are requested before the slow-down zone so an isolated vehicle does not brake unnecessarily.
+7. A candidate is admitted when it does not conflict with any active different movement.
+8. Vehicles on the same route can hold reservations concurrently; the following layer keeps their spacing safe.
+9. A reservation is released after a vehicle leaves the conflict area.
 
-1. The vehicle is detected before the physical intersection.
-2. Its immutable origin and route determine one of the 12 possible movements.
-3. The controller checks a precomputed conflict matrix between all movement pairs.
-4. Only the front vehicle of each waiting movement can request a reservation.
-5. Candidates are ordered by waiting time and queue pressure.
-6. A candidate receives a reservation only if its trajectory does not conflict with any currently reserved movement.
-7. Several compatible movements may therefore cross simultaneously.
-8. A reservation is released after the vehicle leaves the conflict area.
-
-Waiting time prevents starvation, while queue pressure gives additional priority to movements that are accumulating traffic.
-
-This keeps the controller independent from rendering and from the low-level vehicle physics.
+Waiting time prevents starvation while queue pressure raises the priority of movements that are accumulating traffic.
 
 ## 🛡️ Safety model
 
-Collision and proximity checks use **oriented bounding boxes (OBB)** and the **Separating Axis Theorem (SAT)**, so vehicles are checked according to their real heading rather than simple axis-aligned rectangles.
+Collision and proximity checks use **oriented bounding boxes (OBB)** and the **Separating Axis Theorem (SAT)**, so vehicle heading is part of the collision geometry.
 
 The safety model includes:
 
 - positive safety margins around vehicle bodies;
 - protected spawn positions;
-- minimum following distance for vehicles on the same movement;
+- a `66 px` minimum following distance for vehicles on the same movement;
 - conflict-area reservations for crossing trajectories;
 - close-call detection;
 - collision detection as an independent diagnostic metric.
 
-Vehicles in the same lane are ordered by progress along their path. A follower cannot advance beyond the configured safe distance behind its leader.
+A follower is never allowed to advance beyond the configured safe progress behind its leader. This longitudinal safety layer remains active even when several vehicles of the same movement are reserved at once.
 
 ## ⚙️ Vehicle model
 
-Every vehicle tracks the required motion state directly:
+Every vehicle directly tracks:
 
 - `time` — time spent under smart-intersection control;
 - `distance` — distance travelled along its route;
@@ -137,39 +131,62 @@ SLOW    =  50 px/s
 CRUISE  = 120 px/s
 ```
 
-Velocity does not jump instantly between these levels. Vehicles use bounded acceleration and braking:
+Velocity does not jump directly between controller targets. Each vehicle also owns its own acceleration and braking limits. Three deterministic vehicle profiles are rotated across spawned cars, so different cars take different amounts of time to accelerate and brake.
+
+The nominal profile is based on:
 
 ```text
-max acceleration = 100 px/s²
-max braking      = 180 px/s²
+acceleration = 100 px/s²
+braking      = 180 px/s²
 ```
 
-A blocked vehicle slows while approaching the reservation boundary and stops if necessary. Once its movement is reserved, it accelerates back toward cruise speed.
+with slower and stronger-response profiles around those values.
 
 ## 📊 Statistics
 
-Pressing `Esc` shows the final statistics window.
+Pressing `Esc` ends the simulation and opens a final statistics screen inside the SDL window.
 
 Required metrics:
 
-- number of vehicles that passed the intersection;
+- vehicles passed;
 - maximum velocity;
 - minimum velocity;
 - maximum traversal time;
 - minimum traversal time;
 - close calls.
 
-Additional metrics are also collected:
+Additional metrics:
 
+- minimum moving velocity;
 - vehicles spawned;
 - rejected spawn attempts;
 - peak number of vehicles on the road;
-- peak queue size in one lane;
+- real peak queue size in one lane before the conflict area;
 - detected collisions;
 - average controlled traversal time;
 - average travelled distance.
 
-The side panel also displays live traffic state while the simulation is running.
+The side panel also displays live traffic state during the simulation.
+
+## 🧪 Tests and verification
+
+Run the unit tests with:
+
+```bash
+cargo test
+```
+
+The suite covers:
+
+- all 12 routes entering and leaving the intersection correctly;
+- three distinct entry lanes per direction;
+- symmetric conflict geometry with no self-conflict;
+- protected spawn spacing;
+- different per-vehicle acceleration/braking profiles;
+- an isolated vehicle crossing an empty intersection without unnecessary slow-down;
+- a deterministic 60-second high-rate traffic soak scenario asserting zero collisions, zero close calls and a peak lane queue below the audit congestion threshold.
+
+For the visual/audit run, `R` should also be left enabled for at least one minute and the live `COLLISIONS`, `CLOSE CALLS` and queue behavior observed directly.
 
 ## 🎨 Visualization
 
@@ -177,10 +194,11 @@ The SDL2 renderer provides:
 
 - a four-way road with three incoming movement lanes per direction;
 - animated vehicle rotation along curved turning paths;
-- vehicle sprites;
+- vehicle sprites loaded from `assets/cars.bmp`;
 - blinking left/right turn signals;
-- a live control and statistics panel;
-- automatic logical scaling when the physical window size changes.
+- a live control/statistics panel;
+- an in-window final statistics screen;
+- automatic logical scaling to the available window size.
 
 Turning is represented by curved route geometry and continuous vehicle heading, so cars rotate through the maneuver instead of sliding sideways.
 
@@ -201,8 +219,8 @@ Turning is represented by curved route geometry and continuous vehicle heading, 
                    |                               |
                    v                               v
           +------------------+            +------------------+
-          | intersection     |            | lane following   |
-          | reservation mgr  |            | + vehicle physics|
+          | reservation mgr  |            | lane following   |
+          | conflict matrix  |            | vehicle physics  |
           +--------+---------+            +---------+--------+
                    |                                |
                    +---------------+----------------+
@@ -221,14 +239,16 @@ Turning is represented by curved route geometry and continuous vehicle heading, 
                   +-------------+     +-------------+
 ```
 
-The main responsibilities are intentionally separated:
+Main responsibilities:
 
-- `geometry` defines immutable paths and the movement conflict matrix;
-- `controller` grants and releases smart-intersection reservations;
-- `simulation` owns the fixed-timestep update and longitudinal vehicle motion;
+- `geometry` defines immutable paths, safety constants and the conflict matrix;
+- `controller` grants and releases reservations;
+- `simulation` owns the fixed-timestep update and longitudinal following;
+- `vehicle` stores per-car motion and braking characteristics;
 - `collision` implements OBB/SAT geometry;
-- `stats` collects final and live metrics;
-- `render` and `sprites` contain presentation-only logic.
+- `stats` collects runtime and final metrics;
+- `stats_screen` renders the final report;
+- `render`, `sprites` and `ui_font` contain presentation logic.
 
 ## 📁 Project structure
 
@@ -237,9 +257,8 @@ smart-road/
 ├── .cargo/
 │   └── config.toml
 ├── assets/
-│   ├── cars.part1.b64
-│   ├── cars.part2.b64
-│   └── cars.part3.b64
+│   ├── README.md
+│   └── cars.bmp
 ├── src/
 │   ├── collision.rs
 │   ├── controller.rs
@@ -249,6 +268,7 @@ smart-road/
 │   ├── simulation.rs
 │   ├── sprites.rs
 │   ├── stats.rs
+│   ├── stats_screen.rs
 │   ├── ui_font.rs
 │   └── vehicle.rs
 ├── .gitignore
@@ -261,9 +281,9 @@ smart-road/
 
 - Arrow keys describe the **travel direction**, not the side where the vehicle appears.
 - `R` is a toggle: one press starts continuous random generation and the next press stops it.
-- The green/red state in the side panel refers to simulation status; there are no traffic lights in the intersection.
-- The project uses a fixed logical rendering area and scales it to the available window size.
+- The colored state in the side panel describes the simulation; there are no traffic lights.
 - CMake 4 compatibility for the bundled SDL2 build is configured in `.cargo/config.toml`.
+- The controller is an idealized autonomous-intersection model: it assumes perfect route knowledge and does not model sensor uncertainty or communication latency.
 
 ## 🧑‍💻 Author
 
