@@ -24,8 +24,6 @@ pub fn show(
     events: &mut sdl2::EventPump,
     sim: &Sim,
 ) -> Result<(), String> {
-    draw(canvas, sim)?;
-
     'statistics: loop {
         for event in events.poll_iter() {
             match event {
@@ -38,6 +36,9 @@ pub fn show(
                 _ => {}
             }
         }
+
+        // Redraw continuously so resize/expose/minimize events cannot leave a stale backbuffer.
+        draw(canvas, sim)?;
         std::thread::sleep(Duration::from_millis(16));
     }
 
@@ -80,7 +81,7 @@ fn draw(canvas: &mut Canvas<Window>, sim: &Sim) -> Result<(), String> {
         canvas,
         "ESC / ENTER / Q  CLOSE",
         160,
-        H as i32 - 115,
+        H as i32 - 90,
         1,
         MUTED,
     )?;
