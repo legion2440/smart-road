@@ -1,8 +1,10 @@
-//! Simulation statistics required by the subject plus a few operational metrics.
+//! Simulation statistics required by the subject plus operational metrics.
 
 use crate::geometry::{Path, SAFETY_GAP};
 use crate::vehicle::Vehicle;
 use std::collections::HashSet;
+
+const MOVING_EPSILON: f64 = 0.5;
 
 #[derive(Debug)]
 pub struct Statistics {
@@ -15,6 +17,7 @@ pub struct Statistics {
     pub peak_lane_queue: usize,
     max_velocity: f64,
     min_velocity: f64,
+    min_moving_velocity: f64,
     max_time: Option<f64>,
     min_time: Option<f64>,
     total_time: f64,
@@ -35,6 +38,7 @@ impl Statistics {
             peak_lane_queue: 0,
             max_velocity: 0.0,
             min_velocity: f64::INFINITY,
+            min_moving_velocity: f64::INFINITY,
             max_time: None,
             min_time: None,
             total_time: 0.0,
@@ -47,6 +51,9 @@ impl Statistics {
     pub fn observe_velocity(&mut self, velocity: f64) {
         self.max_velocity = self.max_velocity.max(velocity);
         self.min_velocity = self.min_velocity.min(velocity);
+        if velocity > MOVING_EPSILON {
+            self.min_moving_velocity = self.min_moving_velocity.min(velocity);
+        }
     }
 
     pub fn record_completion(&mut self, controlled_time: f64, distance: f64) {
@@ -100,11 +107,8 @@ impl Statistics {
     }
 
     pub fn summary(&self) -> String {
-        let min_velocity = if self.min_velocity.is_finite() {
-            self.min_velocity
-        } else {
-            0.0
-        };
+        let min_velocity = finite_or_zero(self.min_velocity);
+        let min_moving_velocity = finite_or_zero(self.min_moving_velocity);
         let max_time = self.max_time.unwrap_or(0.0);
         let min_time = self.min_time.unwrap_or(0.0);
         let average_time = if self.passed == 0 {
@@ -119,13 +123,14 @@ impl Statistics {
         };
 
         format!(
-            "Max number of vehicles that passed the intersection: {}\n\
+            "Vehicles passed: {}\n\
              Max velocity: {:.1} px/s\n\
              Min velocity: {:.1} px/s\n\
-             Max time that took a vehicle to pass the intersection: {:.2} s\n\
-             Min time that took a vehicle to pass the intersection: {:.2} s\n\
+             Max traversal time: {:.2} s\n\
+             Min traversal time: {:.2} s\n\
              Close calls: {}\n\n\
              Additional statistics\n\
+             Min moving velocity: {:.1} px/s\n\
              Spawned: {}\n\
              Rejected spawns: {}\n\
              Peak vehicles on road: {}\n\
@@ -139,6 +144,7 @@ impl Statistics {
             max_time,
             min_time,
             self.close_calls,
+            min_moving_velocity,
             self.spawned,
             self.rejected_spawns,
             self.peak_vehicles,
@@ -154,4 +160,8 @@ impl Default for Statistics {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn finite_or_zero(value: f64) -> f64 {
+    if value.is_finite() { value } else { 0.0 }
 }
