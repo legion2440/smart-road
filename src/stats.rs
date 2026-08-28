@@ -15,6 +15,7 @@ pub struct Statistics {
     pub collisions: u32,
     pub peak_vehicles: usize,
     pub peak_lane_queue: usize,
+    pub peak_approach_vehicles: usize,
     max_velocity: f64,
     min_velocity: f64,
     min_moving_velocity: f64,
@@ -36,6 +37,7 @@ impl Statistics {
             collisions: 0,
             peak_vehicles: 0,
             peak_lane_queue: 0,
+            peak_approach_vehicles: 0,
             max_velocity: 0.0,
             min_velocity: f64::INFINITY,
             min_moving_velocity: f64::INFINITY,
@@ -64,9 +66,17 @@ impl Statistics {
         self.total_distance += distance;
     }
 
-    pub fn update_peaks(&mut self, on_road: usize, peak_lane_queue: usize) {
+    pub fn update_peaks(
+        &mut self,
+        on_road: usize,
+        peak_lane_queue: usize,
+        peak_approach_vehicles: usize,
+    ) {
         self.peak_vehicles = self.peak_vehicles.max(on_road);
         self.peak_lane_queue = self.peak_lane_queue.max(peak_lane_queue);
+        self.peak_approach_vehicles = self
+            .peak_approach_vehicles
+            .max(peak_approach_vehicles);
     }
 
     pub fn observe_proximity(&mut self, vehicles: &[Vehicle], paths: &[[Path; 3]; 4]) {
@@ -123,11 +133,11 @@ impl Statistics {
         };
 
         format!(
-            "Vehicles passed: {}\n\
+            "Max number of vehicles that passed the intersection: {}\n\
              Max velocity: {:.1} px/s\n\
              Min velocity: {:.1} px/s\n\
-             Max traversal time: {:.2} s\n\
-             Min traversal time: {:.2} s\n\
+             Max time that took a vehicle to pass the intersection: {:.2} s\n\
+             Min time that took a vehicle to pass the intersection: {:.2} s\n\
              Close calls: {}\n\n\
              Additional statistics\n\
              Min moving velocity: {:.1} px/s\n\
@@ -135,6 +145,7 @@ impl Statistics {
              Rejected spawns: {}\n\
              Peak vehicles on road: {}\n\
              Peak queue in one lane: {}\n\
+             Peak vehicles on one approach: {}\n\
              Collisions detected: {}\n\
              Average controlled time: {:.2} s\n\
              Average distance travelled: {:.1} px",
@@ -149,6 +160,7 @@ impl Statistics {
             self.rejected_spawns,
             self.peak_vehicles,
             self.peak_lane_queue,
+            self.peak_approach_vehicles,
             self.collisions,
             average_time,
             average_distance,
