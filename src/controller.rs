@@ -45,7 +45,8 @@ impl IntersectionManager {
             let movement = vehicle.movement_id();
             queue_pressure[movement] += 1;
             let path = &paths[vehicle.origin][vehicle.route.index()];
-            let request_progress = (path.stop_progress - RESERVATION_LOOKAHEAD).max(path.control_entry);
+            let request_progress =
+                (path.stop_progress - RESERVATION_LOOKAHEAD).max(path.control_entry);
             if vehicle.progress < request_progress {
                 continue;
             }
@@ -95,7 +96,10 @@ impl IntersectionManager {
     pub fn target_speed(&self, path: &Path, vehicle: &Vehicle) -> f64 {
         use crate::geometry::{SPEED_CRUISE, SPEED_SLOW, SPEED_STOP};
 
-        if vehicle.detected_tick.is_none() || vehicle.reserved || vehicle.progress >= path.stop_progress {
+        if vehicle.detected_tick.is_none()
+            || vehicle.reserved
+            || vehicle.progress >= path.conflict_entry
+        {
             return SPEED_CRUISE;
         }
 
