@@ -7,7 +7,7 @@
 use crate::geometry::{build_conflict_matrix, ConflictMatrix, Path, MOVEMENT_COUNT, SLOW_ZONE};
 use crate::vehicle::Vehicle;
 
-const RESERVATION_LOOKAHEAD: f64 = 90.0;
+const RESERVATION_LOOKAHEAD: f64 = 160.0;
 
 pub struct IntersectionManager {
     conflicts: ConflictMatrix,
@@ -76,10 +76,13 @@ impl IntersectionManager {
 
         for index in candidates {
             let movement = vehicles[index].movement_id();
-            if active_movements
-                .iter()
-                .all(|&active| !self.conflicts[movement][active])
-            {
+            let route_is_available = active_movements.iter().all(|&active| {
+                // Vehicles following the exact same immutable path are protected
+                // by the longitudinal following-distance layer. Treating them as
+                // crossing conflicts would serialize an otherwise safe convoy.
+                active == movement || !self.conflicts[movement][active]
+            });
+            if route_is_available {
                 vehicles[index].reserved = true;
                 vehicles[index].wait_ticks = 0;
                 active_movements.push(movement);
