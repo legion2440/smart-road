@@ -2,14 +2,15 @@
 
 use crate::controller::IntersectionManager;
 use crate::geometry::{
-    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FOLLOW_DISTANCE,
-    MAX_ACCELERATION, MAX_BRAKING, MOVEMENT_COUNT, SPEED_CRUISE,
+    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, MOVEMENT_COUNT,
+    SPEED_CRUISE,
 };
 use crate::stats::Statistics;
 use crate::vehicle::{Vehicle, VehiclePhase};
 use rand::{seq::SliceRandom, thread_rng};
 
 const EPSILON: f64 = 1.0e-6;
+const FOLLOW_DISTANCE: f64 = 66.0;
 
 pub struct Sim {
     pub paths: [[Path; 3]; 4],
@@ -112,8 +113,13 @@ impl Sim {
 
         for vehicle in &self.vehicles {
             let path = &self.paths[vehicle.origin][vehicle.route.index()];
-            let target = self.manager.target_speed(path, vehicle).min(SPEED_CRUISE);
-            let next_velocity = approach_velocity(vehicle.velocity, target);
+            let target = self.manager.target_speed(path, vehicle);
+            let next_velocity = approach_velocity(
+                vehicle.velocity,
+                target,
+                vehicle.max_acceleration,
+                vehicle.max_braking,
+            );
             let mut progress = (vehicle.progress + next_velocity * FIXED_DT).min(path.len);
 
             if vehicle.detected_tick.is_some()
@@ -207,7 +213,8 @@ impl Sim {
     fn peak_lane_queue(&self) -> usize {
         let mut queues = [0usize; MOVEMENT_COUNT];
         for vehicle in &self.vehicles {
-            if vehicle.detected_tick.is_some() && !vehicle.reserved {
+            let path = &self.paths[vehicle.origin][vehicle.route.index()];
+            if vehicle.progress + EPSILON < path.conflict_entry {
                 queues[vehicle.movement_id()] += 1;
             }
         }
@@ -240,21 +247,21 @@ impl Default for Sim {
     }
 }
 
-fn approach_velocity(current: f64, target: f64) -> f64 {
+fn approach_velocity(current: f64, target: f64, max_acceleration: f64, max_braking: f64) -> f64 {
     if target > current {
-        (current + MAX_ACCELERATION * FIXED_DT).min(target)
+        (current + max_acceleration * FIXED_DT).min(target)
     } else {
-        (current - MAX_BRAKING * FIXED_DT).max(target).max(0.0)
+        (current - max_braking * FIXED_DT).max(target).max(0.0)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{FIXED_HZ, SPEED_SLOW, SPEED_STOP};
 
     #[test]
     fn three_target_velocity_levels_exist() {
-        use crate::geometry::{SPEED_SLOW, SPEED_STOP};
         assert!(SPEED_STOP < SPEED_SLOW);
         assert!(SPEED_SLOW < SPEED_CRUISE);
     }
@@ -264,5 +271,45 @@ mod tests {
         let mut sim = Sim::new();
         assert!(sim.spawn_exact(0, Route::Straight));
         assert!(!sim.spawn_exact(0, Route::Straight));
+    }
+
+    #[test]
+    fn deterministic_one_minute_soak_stays_safe_and_below_congestion_limit() {
+        let mut sim = Sim::new();
+        let schedule: [(usize, Route); 12] = [
+            (0, Route::Right),
+            (2, Route::Straight),
+            (1, Route::Left),
+            (3, Route::Right),
+            (0, Route::Straight),
+            (2, Route::Left),
+            (1, Route::Right),
+            (3, Route::Straight),
+            (0, Route::Left),
+            (2, Route::Right),
+            (1, Route::Straight),
+            (3, Route::Left),
+        ];
+        let total_ticks = FIXED_HZ as u64 * 60;
+        let mut next_spawn = 0_u64;
+        let mut schedule_index = 0_usize;
+
+        for tick in 0..total_ticks {
+            if tick >= next_spawn {
+                let (origin, route) = schedule[schedule_index % schedule.len()];
+                let _ = sim.spawn_exact(origin, route);
+                schedule_index += 1;
+                next_spawn += AUTO_SPAWN_TICKS;
+            }
+            sim.step();
+        }
+
+        assert_eq!(sim.stats.collisions, 0);
+        assert_eq!(sim.stats.close_calls, 0);
+        assert!(
+            sim.stats.peak_lane_queue < 8,
+            "peak lane queue reached {}",
+            sim.stats.peak_lane_queue
+        );
     }
 }
