@@ -1,6 +1,6 @@
 //! Passive SDL rendering of the simulation state.
 
-use crate::geometry::{CX, CY, H, LANE_W, ROAD_HALF, Route, W};
+use crate::geometry::{CX, CY, H, LANE_W, ROAD_HALF, Route, SAFETY_GAP, W};
 use crate::simulation::Sim;
 use crate::sprites::{route_color, SpriteSet, CAR_TEXTURE_H, CAR_TEXTURE_W};
 use sdl2::pixels::Color;
@@ -181,11 +181,15 @@ fn draw_stop_lines(canvas: &mut Canvas<Window>) -> Result<(), String> {
     let x1 = CX.round() as i32;
     let y0 = (CY - ROAD_HALF).round() as i32;
     let y1 = CY.round() as i32;
+    let north_y = (CY - ROAD_HALF - SAFETY_GAP).round() as i32;
+    let south_y = (CY + ROAD_HALF + SAFETY_GAP).round() as i32;
+    let east_x = (CX + ROAD_HALF + SAFETY_GAP).round() as i32;
+    let west_x = (CX - ROAD_HALF - SAFETY_GAP).round() as i32;
 
-    canvas.fill_rect(Rect::new(x0, y0 - 5, half, 4))?;
-    canvas.fill_rect(Rect::new(x1, (CY + ROAD_HALF).round() as i32 + 1, half, 4))?;
-    canvas.fill_rect(Rect::new((CX + ROAD_HALF).round() as i32 + 1, y0, 4, half))?;
-    canvas.fill_rect(Rect::new((CX - ROAD_HALF).round() as i32 - 5, y1, 4, half))?;
+    canvas.fill_rect(Rect::new(x0, north_y - 2, half, 4))?;
+    canvas.fill_rect(Rect::new(x1, south_y - 2, half, 4))?;
+    canvas.fill_rect(Rect::new(east_x - 2, y0, 4, half))?;
+    canvas.fill_rect(Rect::new(west_x - 2, y1, 4, half))?;
     Ok(())
 }
 
