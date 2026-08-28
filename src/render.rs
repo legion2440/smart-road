@@ -3,7 +3,7 @@
 use crate::geometry::{CAR_LEN, CX, CY, FIXED_HZ, H, LANE_W, ROAD_HALF, Route, W};
 use crate::simulation::Sim;
 use crate::sprites::{route_color, SpriteSet, CAR_TEXTURE_H, CAR_TEXTURE_W};
-use crate::ui_font::{draw_text, text_width};
+use crate::ui_font::draw_text;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
@@ -28,6 +28,8 @@ const GOOD: Color = Color::RGB(57, 217, 138);
 const BAD: Color = Color::RGB(255, 85, 96);
 const TURN_SIGNAL: Color = Color::RGB(255, 166, 48);
 const TURN_SIGNAL_HALF_PERIOD_TICKS: u64 = FIXED_HZ as u64 / 3;
+const CONTROL_KEY_W: u32 = 72;
+const CONTROL_DESCRIPTION_X: i32 = 84;
 
 pub fn draw(
     canvas: &mut Canvas<Window>,
@@ -350,11 +352,10 @@ fn control_line(
     key: &str,
     description: &str,
 ) -> Result<(), String> {
-    let key_w = (text_width(key, 1) + 18).max(64);
     canvas.set_draw_color(Color::RGB(36, 38, 51));
-    canvas.fill_rect(Rect::new(x, y, key_w as u32, 24))?;
+    canvas.fill_rect(Rect::new(x, y, CONTROL_KEY_W, 24))?;
     canvas.set_draw_color(CARD_EDGE);
-    canvas.draw_rect(Rect::new(x, y, key_w as u32, 24))?;
+    canvas.draw_rect(Rect::new(x, y, CONTROL_KEY_W, 24))?;
     draw_text(canvas, key, x + 9, y + 8, 1, TEXT)?;
-    draw_text(canvas, description, x + 76, y + 8, 1, MUTED)
+    draw_text(canvas, description, x + CONTROL_DESCRIPTION_X, y + 8, 1, MUTED)
 }
