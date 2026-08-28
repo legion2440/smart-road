@@ -205,7 +205,7 @@ fn turn_signal_visible(
     let signal_end = (curve_end + CAR_LEN / 2.0).min(path.len);
     progress >= path.control_entry
         && progress < signal_end
-        && (tick / TURN_SIGNAL_HALF_PERIOD_TICKS).is_multiple_of(2)
+        && (tick / TURN_SIGNAL_HALF_PERIOD_TICKS) % 2 == 0
 }
 
 fn draw_turn_signal(
