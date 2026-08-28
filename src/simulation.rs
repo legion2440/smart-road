@@ -2,8 +2,8 @@
 
 use crate::controller::IntersectionManager;
 use crate::geometry::{
-    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FIXED_HZ,
-    FOLLOW_DISTANCE, MAX_ACCELERATION, MAX_BRAKING, MOVEMENT_COUNT, SPEED_CRUISE,
+    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FOLLOW_DISTANCE,
+    MAX_ACCELERATION, MAX_BRAKING, MOVEMENT_COUNT, SPEED_CRUISE,
 };
 use crate::stats::Statistics;
 use crate::vehicle::{Vehicle, VehiclePhase};
@@ -140,6 +140,9 @@ impl Sim {
             vehicle.velocity = travelled / FIXED_DT;
             vehicle.target_velocity = target_velocities[index];
             vehicle.distance += travelled;
+            if vehicle.detected_tick.is_some() {
+                vehicle.time += FIXED_DT;
+            }
             vehicle.update_pose(path);
             vehicle.phase = if vehicle.progress + EPSILON >= path.conflict_exit {
                 VehiclePhase::Leaving
@@ -222,12 +225,7 @@ impl Sim {
             }
 
             let vehicle = self.vehicles.remove(index);
-            let controlled_time = vehicle
-                .detected_tick
-                .map(|detected| self.tick.saturating_sub(detected) as f64 / FIXED_HZ as f64)
-                .unwrap_or(0.0);
-            self.stats
-                .record_completion(controlled_time, vehicle.distance);
+            self.stats.record_completion(vehicle.time, vehicle.distance);
         }
     }
 
