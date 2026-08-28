@@ -2,15 +2,14 @@
 
 use crate::controller::IntersectionManager;
 use crate::geometry::{
-    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, MOVEMENT_COUNT,
-    SPEED_CRUISE,
+    build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FOLLOW_DISTANCE,
+    MOVEMENT_COUNT, SPEED_CRUISE,
 };
 use crate::stats::Statistics;
 use crate::vehicle::{Vehicle, VehiclePhase};
 use rand::{seq::SliceRandom, thread_rng};
 
 const EPSILON: f64 = 1.0e-6;
-const FOLLOW_DISTANCE: f64 = 66.0;
 
 pub struct Sim {
     pub paths: [[Path; 3]; 4],
@@ -142,7 +141,6 @@ impl Sim {
             vehicle.progress = proposed[index];
             let travelled = (vehicle.progress - previous).max(0.0);
 
-            // The actual velocity is distance / time for this fixed physics step.
             vehicle.velocity = travelled / FIXED_DT;
             vehicle.target_velocity = target_velocities[index];
             vehicle.distance += travelled;
@@ -271,6 +269,22 @@ mod tests {
         let mut sim = Sim::new();
         assert!(sim.spawn_exact(0, Route::Straight));
         assert!(!sim.spawn_exact(0, Route::Straight));
+    }
+
+    #[test]
+    fn lone_vehicle_does_not_brake_on_an_empty_intersection() {
+        let mut sim = Sim::new();
+        assert!(sim.spawn_exact(0, Route::Straight));
+        let mut minimum = SPEED_CRUISE;
+
+        while !sim.vehicles.is_empty() {
+            sim.step();
+            for vehicle in &sim.vehicles {
+                minimum = minimum.min(vehicle.velocity);
+            }
+        }
+
+        assert!(minimum > SPEED_SLOW);
     }
 
     #[test]
