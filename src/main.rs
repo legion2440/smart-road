@@ -7,6 +7,7 @@ mod render;
 mod simulation;
 mod sprites;
 mod stats;
+mod stats_screen;
 mod ui_font;
 mod vehicle;
 
@@ -14,7 +15,6 @@ use geometry::{FIXED_HZ, H};
 use render::{draw, update_title, CANVAS_W};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::messagebox::{show_simple_message_box, MessageBoxFlag};
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 use simulation::Sim;
@@ -39,6 +39,7 @@ fn main() -> Result<(), String> {
     let mut sim = Sim::new();
     let mut auto_spawn = false;
     let mut paused = false;
+    let mut statistics_requested = false;
 
     let update_interval = Duration::from_nanos(1_000_000_000 / FIXED_HZ as u64);
     let fallback_render_interval = Duration::from_nanos(1_000_000_000 / FALLBACK_RENDER_HZ);
@@ -55,7 +56,10 @@ fn main() -> Result<(), String> {
                     repeat: false,
                     ..
                 } => match key {
-                    Keycode::Escape => break 'running,
+                    Keycode::Escape => {
+                        statistics_requested = true;
+                        break 'running;
+                    }
                     // Subject mapping: arrows indicate the travel direction.
                     // Up = from south, Down = from north,
                     // Right = from west, Left = from east.
@@ -111,14 +115,9 @@ fn main() -> Result<(), String> {
         }
     }
 
-    let summary = sim.statistics_summary();
-    show_simple_message_box(
-        MessageBoxFlag::INFORMATION,
-        "Smart Road statistics",
-        &summary,
-        Some(canvas.window()),
-    )
-    .map_err(|error| format!("unable to show statistics: {error}"))?;
+    if statistics_requested {
+        stats_screen::show(&mut canvas, &mut events, &sim)?;
+    }
 
     Ok(())
 }
