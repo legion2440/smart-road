@@ -1,6 +1,5 @@
-//! Car sprite loading from the original `road_intersection` sprite sheet.
+//! Car sprite loading and texture preparation.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use crate::geometry::{CAR_LEN, CAR_W, Route};
 use sdl2::hint::Hint;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -18,12 +17,7 @@ pub const CAR_TEXTURE_W: u32 = CAR_LEN as u32 + 2 * CAR_PAD;
 pub const CAR_TEXTURE_H: u32 = CAR_W as u32 + 2 * CAR_PAD;
 
 const CHROMA_KEY: Color = Color::RGB(255, 0, 255);
-const CARS_B64_PARTS: [&str; 3] = [
-    include_str!("../assets/cars.part1.b64"),
-    include_str!("../assets/cars.part2.b64"),
-    include_str!("../assets/cars.part3.b64"),
-];
-const EXPECTED_BMP_LEN: usize = 4_746;
+const CARS_BMP: &[u8] = include_bytes!("../assets/cars.bmp");
 
 pub struct SpriteSet<'a> {
     cars: Vec<Texture<'a>>,
@@ -60,26 +54,7 @@ fn build_cars<'a>(
         return Err("failed to enable nearest-neighbour texture sampling".to_string());
     }
 
-    let encoded: String = CARS_B64_PARTS
-        .iter()
-        .flat_map(|part| part.chars())
-        .filter(|ch| !ch.is_ascii_whitespace())
-        .collect();
-    let bytes = STANDARD
-        .decode(encoded)
-        .map_err(|error| format!("unable to decode embedded cars.bmp: {error}"))?;
-
-    if bytes.len() != EXPECTED_BMP_LEN {
-        return Err(format!(
-            "invalid embedded cars.bmp size: expected {EXPECTED_BMP_LEN} bytes, got {}",
-            bytes.len()
-        ));
-    }
-    if !bytes.starts_with(b"BM") {
-        return Err("invalid embedded cars.bmp signature".to_string());
-    }
-
-    let mut rwops = RWops::from_bytes(&bytes)
+    let mut rwops = RWops::from_bytes(CARS_BMP)
         .map_err(|error| format!("unable to open embedded cars.bmp: {error}"))?;
     let surface = Surface::load_bmp_rw(&mut rwops)
         .map_err(|error| format!("unable to load embedded cars.bmp: {error}"))?;
