@@ -13,6 +13,7 @@ pub struct Statistics {
     pub rejected_spawns: u32,
     pub close_calls: u32,
     pub collisions: u32,
+    pub emergency_clamps: u32,
     pub peak_vehicles: usize,
     pub peak_lane_queue: usize,
     pub peak_approach_vehicles: usize,
@@ -35,6 +36,7 @@ impl Statistics {
             rejected_spawns: 0,
             close_calls: 0,
             collisions: 0,
+            emergency_clamps: 0,
             peak_vehicles: 0,
             peak_lane_queue: 0,
             peak_approach_vehicles: 0,
@@ -147,6 +149,7 @@ impl Statistics {
              Peak queue in one lane: {}\n\
              Peak vehicles on one approach: {}\n\
              Collisions detected: {}\n\
+             Emergency safety clamps: {}\n\
              Average controlled time: {:.2} s\n\
              Average distance travelled: {:.1} px",
             self.passed,
@@ -162,6 +165,7 @@ impl Statistics {
             self.peak_lane_queue,
             self.peak_approach_vehicles,
             self.collisions,
+            self.emergency_clamps,
             average_time,
             average_distance,
         )
