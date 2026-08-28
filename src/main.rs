@@ -121,9 +121,24 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
+fn fitted_window_size(video: &sdl2::VideoSubsystem) -> (u32, u32) {
+    let usable = video
+        .display_usable_bounds(0)
+        .map(|bounds| (bounds.width(), bounds.height()))
+        .unwrap_or((CANVAS_W, H));
+    let scale = (usable.0 as f64 / CANVAS_W as f64)
+        .min(usable.1 as f64 / H as f64)
+        .min(1.0);
+    (
+        (CANVAS_W as f64 * scale).floor().max(1.0) as u32,
+        (H as f64 * scale).floor().max(1.0) as u32,
+    )
+}
+
 fn create_window(video: &sdl2::VideoSubsystem) -> Result<Window, String> {
+    let (width, height) = fitted_window_size(video);
     video
-        .window("Smart Road", CANVAS_W, H)
+        .window("Smart Road", width, height)
         .position_centered()
         .resizable()
         .build()
