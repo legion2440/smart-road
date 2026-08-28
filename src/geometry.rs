@@ -15,7 +15,7 @@ pub const END: f64 = H as f64 + 50.0;
 pub const CAR_LEN: f64 = 30.0;
 pub const CAR_W: f64 = 17.0;
 pub const SAFETY_GAP: f64 = 14.0;
-pub const FOLLOW_DISTANCE: f64 = CAR_LEN + SAFETY_GAP + 2.0;
+pub const FOLLOW_DISTANCE: f64 = 66.0;
 
 pub const FIXED_HZ: u32 = 60;
 pub const FIXED_DT: f64 = 1.0 / FIXED_HZ as f64;
@@ -47,7 +47,7 @@ impl Route {
         self as usize
     }
 
-    /// The inherited sprite sheet stores straight, left and right in this order.
+    /// The sprite sheet stores straight, left and right in this order.
     pub fn sprite_index(self) -> usize {
         match self {
             Route::Straight => 0,
@@ -244,7 +244,7 @@ pub fn build_conflict_matrix(paths: &[[Path; 3]; 4]) -> ConflictMatrix {
     std::array::from_fn(|first| {
         std::array::from_fn(|second| {
             if first == second {
-                return true;
+                return false;
             }
             let first_path = &paths[first / 3][first % 3];
             let second_path = &paths[second / 3][second % 3];
@@ -325,11 +325,11 @@ mod tests {
     }
 
     #[test]
-    fn conflict_matrix_is_symmetric() {
+    fn conflict_matrix_is_symmetric_and_does_not_self_conflict() {
         let paths = build_paths();
         let conflicts = build_conflict_matrix(&paths);
         for first in 0..MOVEMENT_COUNT {
-            assert!(conflicts[first][first]);
+            assert!(!conflicts[first][first]);
             for second in 0..MOVEMENT_COUNT {
                 assert_eq!(conflicts[first][second], conflicts[second][first]);
             }
