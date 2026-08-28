@@ -1,0 +1,5 @@
+[env]
+# CMake 4 removed compatibility with projects declaring policies older than 3.5.
+# rust-sdl2's bundled SDL2 still declares an older minimum, so initialize the
+# third-party CMake project with the oldest policy level accepted by CMake 4.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
