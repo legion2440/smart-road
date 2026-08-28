@@ -3,13 +3,15 @@
 use crate::controller::IntersectionManager;
 use crate::geometry::{
     build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FOLLOW_DISTANCE,
-    MOVEMENT_COUNT, SPEED_CRUISE,
+    MOVEMENT_COUNT, SPEED_CRUISE, SPEED_SLOW,
 };
 use crate::stats::Statistics;
-use crate::vehicle::{Vehicle, VehiclePhase};
+use crate::vehicle::Vehicle;
 use rand::{seq::SliceRandom, thread_rng};
 
 const EPSILON: f64 = 1.0e-6;
+const STOP_MARGIN: f64 = 8.0;
+const CLAMP_TOLERANCE: f64 = 1.0e-3;
 
 pub struct Sim {
     pub paths: [[Path; 3]; 4],
@@ -83,8 +85,10 @@ impl Sim {
         self.next_vehicle_id = self.next_vehicle_id.saturating_add(1);
         self.vehicles.push(vehicle);
         self.stats.spawned = self.stats.spawned.saturating_add(1);
+
+        let (peak_queue, peak_approach) = self.lane_load_peaks();
         self.stats
-            .update_peaks(self.vehicles.len(), self.peak_lane_queue());
+            .update_peaks(self.vehicles.len(), peak_queue, peak_approach);
         true
     }
 
@@ -108,11 +112,26 @@ impl Sim {
         self.manager.update(&self.paths, &mut self.vehicles);
 
         let mut proposed = Vec::with_capacity(self.vehicles.len());
-        let mut target_velocities = Vec::with_capacity(self.vehicles.len());
+        let mut emergency_clamps = 0_u32;
 
-        for vehicle in &self.vehicles {
+        for index in 0..self.vehicles.len() {
+            let vehicle = &self.vehicles[index];
             let path = &self.paths[vehicle.origin][vehicle.route.index()];
-            let target = self.manager.target_speed(path, vehicle);
+            let mut target = self.manager.target_speed(path, vehicle);
+
+            if vehicle.detected_tick.is_some()
+                && !vehicle.reserved
+                && vehicle.progress < path.stop_progress
+            {
+                let distance_to_stop = path.stop_progress - vehicle.progress;
+                target = target.min(braking_speed_limit(distance_to_stop, vehicle.max_braking));
+            }
+
+            if let Some(leader_progress) = self.leader_progress(index) {
+                let clearance = leader_progress - vehicle.progress - FOLLOW_DISTANCE;
+                target = target.min(braking_speed_limit(clearance, vehicle.max_braking));
+            }
+
             let next_velocity = approach_velocity(
                 vehicle.velocity,
                 target,
@@ -124,15 +143,23 @@ impl Sim {
             if vehicle.detected_tick.is_some()
                 && !vehicle.reserved
                 && vehicle.progress <= path.stop_progress + EPSILON
+                && progress > path.stop_progress
             {
-                progress = progress.min(path.stop_progress);
+                if progress > path.stop_progress + CLAMP_TOLERANCE {
+                    emergency_clamps = emergency_clamps.saturating_add(1);
+                }
+                progress = path.stop_progress;
             }
 
             proposed.push(progress.max(vehicle.progress));
-            target_velocities.push(target);
         }
 
-        self.apply_lane_following(&mut proposed);
+        emergency_clamps = emergency_clamps
+            .saturating_add(self.apply_lane_following_guard(&mut proposed));
+        self.stats.emergency_clamps = self
+            .stats
+            .emergency_clamps
+            .saturating_add(emergency_clamps);
 
         for index in 0..self.vehicles.len() {
             let vehicle = &mut self.vehicles[index];
@@ -142,29 +169,20 @@ impl Sim {
             let travelled = (vehicle.progress - previous).max(0.0);
 
             vehicle.velocity = travelled / FIXED_DT;
-            vehicle.target_velocity = target_velocities[index];
             vehicle.distance += travelled;
             if vehicle.detected_tick.is_some() {
                 vehicle.time += FIXED_DT;
             }
             vehicle.update_pose(path);
-            vehicle.phase = if vehicle.progress + EPSILON >= path.conflict_exit {
-                VehiclePhase::Leaving
-            } else if vehicle.progress + EPSILON >= path.conflict_entry {
-                VehiclePhase::Crossing
-            } else if vehicle.detected_tick.is_some() {
-                VehiclePhase::Controlled
-            } else {
-                VehiclePhase::Approaching
-            };
         }
 
         for vehicle in &self.vehicles {
             self.stats.observe_velocity(vehicle.velocity);
         }
         self.stats.observe_proximity(&self.vehicles, &self.paths);
+        let (peak_queue, peak_approach) = self.lane_load_peaks();
         self.stats
-            .update_peaks(self.vehicles.len(), self.peak_lane_queue());
+            .update_peaks(self.vehicles.len(), peak_queue, peak_approach);
         self.remove_completed();
     }
 
@@ -181,7 +199,26 @@ impl Sim {
         }
     }
 
-    fn apply_lane_following(&self, proposed: &mut [f64]) {
+    fn leader_progress(&self, follower_index: usize) -> Option<f64> {
+        let follower = &self.vehicles[follower_index];
+        let movement = follower.movement_id();
+        let mut nearest: Option<f64> = None;
+
+        for (index, vehicle) in self.vehicles.iter().enumerate() {
+            if index == follower_index
+                || vehicle.movement_id() != movement
+                || vehicle.progress <= follower.progress + EPSILON
+            {
+                continue;
+            }
+            nearest = Some(nearest.map_or(vehicle.progress, |current| current.min(vehicle.progress)));
+        }
+        nearest
+    }
+
+    fn apply_lane_following_guard(&self, proposed: &mut [f64]) -> u32 {
+        let mut clamp_count = 0_u32;
+
         for movement in 0..MOVEMENT_COUNT {
             let mut order: Vec<usize> = self
                 .vehicles
@@ -201,22 +238,39 @@ impl Sim {
                 let leader = order[position - 1];
                 let follower = order[position];
                 let safe_limit = proposed[leader] - FOLLOW_DISTANCE;
+                if proposed[follower] > safe_limit + CLAMP_TOLERANCE {
+                    clamp_count = clamp_count.saturating_add(1);
+                }
                 proposed[follower] = proposed[follower]
                     .min(safe_limit)
                     .max(self.vehicles[follower].progress);
             }
         }
+
+        clamp_count
     }
 
-    fn peak_lane_queue(&self) -> usize {
-        let mut queues = [0usize; MOVEMENT_COUNT];
+    fn lane_load_peaks(&self) -> (usize, usize) {
+        let mut queued = [0usize; MOVEMENT_COUNT];
+        let mut approaching = [0usize; MOVEMENT_COUNT];
+
         for vehicle in &self.vehicles {
             let path = &self.paths[vehicle.origin][vehicle.route.index()];
-            if vehicle.progress + EPSILON < path.conflict_entry {
-                queues[vehicle.movement_id()] += 1;
+            if vehicle.progress + EPSILON >= path.conflict_entry {
+                continue;
+            }
+
+            let movement = vehicle.movement_id();
+            approaching[movement] += 1;
+            if vehicle.velocity <= SPEED_SLOW + 0.5 {
+                queued[movement] += 1;
             }
         }
-        queues.into_iter().max().unwrap_or(0)
+
+        (
+            queued.into_iter().max().unwrap_or(0),
+            approaching.into_iter().max().unwrap_or(0),
+        )
     }
 
     fn remove_completed(&mut self) {
@@ -245,6 +299,10 @@ impl Default for Sim {
     }
 }
 
+fn braking_speed_limit(distance: f64, max_braking: f64) -> f64 {
+    (2.0 * max_braking * (distance - STOP_MARGIN).max(0.0)).sqrt()
+}
+
 fn approach_velocity(current: f64, target: f64, max_acceleration: f64, max_braking: f64) -> f64 {
     if target > current {
         (current + max_acceleration * FIXED_DT).min(target)
@@ -256,7 +314,7 @@ fn approach_velocity(current: f64, target: f64, max_acceleration: f64, max_braki
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::{FIXED_HZ, SPEED_SLOW, SPEED_STOP};
+    use crate::geometry::{FIXED_HZ, SPEED_STOP};
 
     #[test]
     fn three_target_velocity_levels_exist() {
@@ -285,6 +343,7 @@ mod tests {
         }
 
         assert!(minimum > SPEED_SLOW);
+        assert_eq!(sim.stats.emergency_clamps, 0);
     }
 
     #[test]
@@ -320,10 +379,16 @@ mod tests {
 
         assert_eq!(sim.stats.collisions, 0);
         assert_eq!(sim.stats.close_calls, 0);
+        assert_eq!(sim.stats.emergency_clamps, 0);
         assert!(
             sim.stats.peak_lane_queue < 8,
             "peak lane queue reached {}",
             sim.stats.peak_lane_queue
+        );
+        assert!(
+            sim.stats.peak_approach_vehicles < 8,
+            "peak approach load reached {}",
+            sim.stats.peak_approach_vehicles
         );
     }
 }
