@@ -112,7 +112,7 @@ impl Sim {
 
         for vehicle in &self.vehicles {
             let path = &self.paths[vehicle.origin][vehicle.route.index()];
-            let target = self.manager.target_speed(path, vehicle);
+            let target = self.manager.target_speed(path, vehicle).min(SPEED_CRUISE);
             let next_velocity = approach_velocity(vehicle.velocity, target);
             let mut progress = (vehicle.progress + next_velocity * FIXED_DT).min(path.len);
 
