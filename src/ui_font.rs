@@ -42,12 +42,6 @@ pub fn draw_text(
     Ok(())
 }
 
-pub fn text_width(text: &str, scale: i32) -> i32 {
-    text.chars()
-        .map(|ch| if ch == ' ' { 4 * scale } else { 6 * scale })
-        .sum()
-}
-
 fn glyph(ch: char) -> [u8; GLYPH_H as usize] {
     match ch {
         'A' => [0b01110,0b10001,0b10001,0b11111,0b10001,0b10001,0b10001],
