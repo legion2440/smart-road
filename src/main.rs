@@ -7,10 +7,11 @@ mod render;
 mod simulation;
 mod sprites;
 mod stats;
+mod ui_font;
 mod vehicle;
 
-use geometry::{FIXED_HZ, H, W};
-use render::{draw, update_title};
+use geometry::{FIXED_HZ, H};
+use render::{draw, update_title, CANVAS_W};
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::messagebox::{show_simple_message_box, MessageBoxFlag};
@@ -27,7 +28,7 @@ fn main() -> Result<(), String> {
     let video = sdl.video()?;
     let (mut canvas, vsync_active) = create_canvas(&video)?;
     canvas
-        .set_logical_size(W, H)
+        .set_logical_size(CANVAS_W, H)
         .map_err(|error| format!("unable to set logical size: {error}"))?;
 
     let texture_creator = canvas.texture_creator();
@@ -98,7 +99,7 @@ fn main() -> Result<(), String> {
         }
 
         update_title(&mut canvas, &sim, auto_spawn, paused);
-        draw(&mut canvas, &sim, &sprites, auto_spawn)?;
+        draw(&mut canvas, &sim, &sprites, auto_spawn, paused)?;
 
         if !vsync_active {
             let delay = fallback_render_interval.saturating_sub(frame_started.elapsed());
@@ -122,7 +123,7 @@ fn main() -> Result<(), String> {
 
 fn create_window(video: &sdl2::VideoSubsystem) -> Result<Window, String> {
     video
-        .window("Smart Road", W, H)
+        .window("Smart Road", CANVAS_W, H)
         .position_centered()
         .resizable()
         .build()
