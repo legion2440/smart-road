@@ -26,7 +26,8 @@ pub fn draw_text(
         let rows = glyph(ch.to_ascii_uppercase());
         for (row, bits) in rows.iter().copied().enumerate() {
             for col in 0..GLYPH_W {
-                if bits & (1 << (GLYPH_W - 1 - col)) != 0 {
+                let mask = 1u8 << ((GLYPH_W - 1 - col) as u32);
+                if bits & mask != 0 {
                     canvas.fill_rect(Rect::new(
                         cursor + col * scale,
                         y + row as i32 * scale,
