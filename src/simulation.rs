@@ -3,15 +3,20 @@
 use crate::controller::IntersectionManager;
 use crate::geometry::{
     build_paths, movement_id, Path, Route, AUTO_SPAWN_TICKS, FIXED_DT, FOLLOW_DISTANCE,
-    MOVEMENT_COUNT, SPEED_CRUISE, SPEED_SLOW,
+    MAX_BRAKING, MOVEMENT_COUNT, SPEED_CRUISE, SPEED_SLOW,
 };
 use crate::stats::Statistics;
-use crate::vehicle::Vehicle;
+use crate::vehicle::{Vehicle, MIN_DYNAMICS_FACTOR};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 
 const EPSILON: f64 = 1.0e-6;
 const STOP_MARGIN: f64 = 8.0;
 const CLAMP_TOLERANCE: f64 = 1.0e-3;
+// A newly spawned car starts at cruise speed. Keep enough room for the weakest
+// braking profile to stop behind a stationary leader without using a hard clamp.
+const SPAWN_CLEARANCE: f64 = FOLLOW_DISTANCE
+    + STOP_MARGIN
+    + SPEED_CRUISE * SPEED_CRUISE / (2.0 * MAX_BRAKING * MIN_DYNAMICS_FACTOR);
 
 pub struct Sim {
     pub paths: [[Path; 3]; 4],
@@ -103,7 +108,7 @@ impl Sim {
         let movement = movement_id(origin, route);
 
         self.vehicles.iter().all(|vehicle| {
-            if vehicle.movement_id() == movement && vehicle.progress < FOLLOW_DISTANCE {
+            if vehicle.movement_id() == movement && vehicle.progress < SPAWN_CLEARANCE {
                 return false;
             }
             let other_path = &self.paths[vehicle.origin][vehicle.route.index()];
@@ -336,6 +341,18 @@ mod tests {
     }
 
     #[test]
+    fn spawn_requires_cruise_speed_braking_clearance() {
+        let mut sim = Sim::new();
+        assert!(sim.spawn_exact(0, Route::Straight));
+
+        sim.vehicles[0].progress = FOLLOW_DISTANCE + 1.0;
+        assert!(!sim.spawn_exact(0, Route::Straight));
+
+        sim.vehicles[0].progress = SPAWN_CLEARANCE + 1.0;
+        assert!(sim.spawn_exact(0, Route::Straight));
+    }
+
+    #[test]
     fn lone_vehicle_does_not_brake_on_an_empty_intersection() {
         let mut sim = Sim::new();
         assert!(sim.spawn_exact(0, Route::Straight));
@@ -353,11 +370,11 @@ mod tests {
     }
 
     #[test]
-    fn seeded_random_soak_stays_safe_and_below_congestion_limit() {
-        for seed in [1_u64, 42, 20_260_828] {
+    fn seeded_three_minute_soak_stays_safe_and_below_congestion_limit() {
+        for seed in [1_u64, 42, 20_260_828, 7] {
             let mut sim = Sim::new();
             let mut rng = StdRng::seed_from_u64(seed);
-            let total_ticks = FIXED_HZ as u64 * 60;
+            let total_ticks = FIXED_HZ as u64 * 180;
 
             for _ in 0..total_ticks {
                 sim.step();
