@@ -82,7 +82,7 @@ The simulation uses a fixed `60 Hz` physics timestep. Rendering is synchronized 
 | `Backspace` | Reset the simulation |
 | `Esc` | End the simulation and show final statistics |
 
-Each manually spawned vehicle receives one of the three legal routes for its incoming direction. Spawn validation prevents a new vehicle from being placed on top of an existing one.
+Each manually spawned vehicle receives one of the three legal routes for its incoming direction. Spawn validation prevents overlap and also requires enough forward clearance for a newly created car at cruise speed to brake safely behind the weakest-braking vehicle profile.
 
 ## 🧠 Smart intersection algorithm
 
@@ -107,13 +107,15 @@ Collision and proximity checks use **oriented bounding boxes (OBB)** and the **S
 The safety model includes:
 
 - positive safety margins around vehicle bodies;
-- protected spawn positions;
+- protected spawn positions with braking-distance clearance;
 - a `66 px` minimum following distance for vehicles on the same movement;
 - conflict-area reservations for crossing trajectories;
 - close-call detection;
 - collision detection as an independent diagnostic metric.
 
 The `66 px` following distance is not an arbitrary constant: it is `30 px` vehicle length + `14 px` safety gap + `22 px` curvature allowance. The extra allowance keeps rotated OBBs separated on the tight `40 px` left-turn radius.
+
+A newly spawned car starts at `120 px/s`, so same-lane spawn clearance additionally includes the `8 px` stopping margin plus the worst-case braking distance for the minimum `0.80` braking factor. With the current constants this produces `124 px` of required progress before another car may spawn on the same movement.
 
 A follower normally stays behind its leader through braking-speed control. Position clamps remain only as emergency invariants: an unreserved vehicle cannot cross its stop boundary and a follower cannot cross the protected following limit.
 
@@ -190,9 +192,10 @@ The suite covers:
 - three distinct entry lanes per direction;
 - symmetric conflict geometry with no self-conflict;
 - protected spawn spacing;
+- cruise-speed braking clearance before same-lane respawn;
 - individual per-vehicle acceleration/braking profiles;
 - an isolated vehicle crossing an empty intersection without unnecessary slow-down;
-- a deterministic 60-second high-rate traffic soak scenario asserting zero collisions, zero close calls, zero emergency clamps, a real queue below 8 and a conservative approach load below 8.
+- deterministic **180-second** high-rate random-traffic soak scenarios across four fixed seeds, asserting zero collisions, zero close calls, zero emergency clamps, a real queue below 8 and a conservative approach load below 8.
 
 For the visual/audit run, `R` should also be left enabled for at least one minute and the live `COLLISIONS`, `CLOSE CALLS` and queue behavior observed directly.
 
@@ -205,7 +208,7 @@ The SDL2 renderer provides:
 - vehicle sprites loaded from `assets/cars.bmp`;
 - blinking left/right turn signals;
 - a live control/statistics panel;
-- an in-window final statistics screen that redraws while it is open;
+- an in-window final statistics screen that redraws continuously and presents at least one frame before processing close events;
 - automatic logical scaling to the available window size.
 
 Turning is represented by curved route geometry and continuous vehicle heading, so cars rotate through the maneuver instead of sliding sideways.
