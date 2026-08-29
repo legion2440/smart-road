@@ -2,6 +2,9 @@
 
 use crate::geometry::{movement_id, Path, Route, MAX_ACCELERATION, MAX_BRAKING, SPEED_CRUISE};
 
+pub const MIN_DYNAMICS_FACTOR: f64 = 0.80;
+pub const MAX_DYNAMICS_FACTOR: f64 = 1.25;
+
 #[derive(Clone, Debug)]
 pub struct Vehicle {
     pub id: u64,
@@ -55,7 +58,7 @@ impl Vehicle {
     }
 }
 
-/// Produces a stable pseudo-random factor in the 0.80..=1.25 range.
+/// Produces a stable pseudo-random factor in the configured dynamics range.
 /// It deliberately depends only on vehicle ID so stress scenarios remain reproducible.
 fn dynamics_factor(id: u64, salt: u64) -> f64 {
     let mut value = id.wrapping_add(salt);
@@ -64,7 +67,7 @@ fn dynamics_factor(id: u64, salt: u64) -> f64 {
     value ^= value >> 31;
 
     let unit = (value >> 11) as f64 / ((1_u64 << 53) as f64);
-    0.80 + unit * 0.45
+    MIN_DYNAMICS_FACTOR + unit * (MAX_DYNAMICS_FACTOR - MIN_DYNAMICS_FACTOR)
 }
 
 #[cfg(test)]
@@ -86,9 +89,11 @@ mod tests {
         assert_ne!(second.max_braking, third.max_braking);
 
         for vehicle in [first, second, third] {
-            assert!((MAX_ACCELERATION * 0.80..=MAX_ACCELERATION * 1.25)
+            assert!((MAX_ACCELERATION * MIN_DYNAMICS_FACTOR
+                ..=MAX_ACCELERATION * MAX_DYNAMICS_FACTOR)
                 .contains(&vehicle.max_acceleration));
-            assert!((MAX_BRAKING * 0.80..=MAX_BRAKING * 1.25)
+            assert!((MAX_BRAKING * MIN_DYNAMICS_FACTOR
+                ..=MAX_BRAKING * MAX_DYNAMICS_FACTOR)
                 .contains(&vehicle.max_braking));
         }
     }
