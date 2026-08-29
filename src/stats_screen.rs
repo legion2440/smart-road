@@ -25,6 +25,10 @@ pub fn show(
     sim: &Sim,
 ) -> Result<(), String> {
     'statistics: loop {
+        // Draw first so an already queued key event cannot close the view before
+        // the final statistics have been presented at least once.
+        draw(canvas, sim)?;
+
         for event in events.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -37,8 +41,6 @@ pub fn show(
             }
         }
 
-        // Redraw continuously so resize/expose/minimize events cannot leave a stale backbuffer.
-        draw(canvas, sim)?;
         std::thread::sleep(Duration::from_millis(16));
     }
 
