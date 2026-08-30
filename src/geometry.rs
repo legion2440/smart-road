@@ -47,15 +47,6 @@ impl Route {
     pub fn index(self) -> usize {
         self as usize
     }
-
-    /// The sprite sheet stores straight, left and right in this order.
-    pub fn sprite_index(self) -> usize {
-        match self {
-            Route::Straight => 0,
-            Route::Left => 1,
-            Route::Right => 2,
-        }
-    }
 }
 
 pub fn movement_id(origin: usize, route: Route) -> usize {
