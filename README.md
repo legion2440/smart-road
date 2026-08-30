@@ -194,6 +194,7 @@ The suite covers:
 - protected spawn spacing;
 - cruise-speed braking clearance before same-lane respawn;
 - individual per-vehicle acceleration/braking profiles;
+- all seven deterministic visual vehicle variants;
 - an isolated vehicle crossing an empty intersection without unnecessary slow-down;
 - deterministic **180-second** high-rate random-traffic soak scenarios across four fixed seeds, asserting zero collisions, zero close calls, zero emergency clamps, a real queue below 8 and a conservative approach load below 8.
 
@@ -204,12 +205,16 @@ For the visual/audit run, `R` should also be left enabled for at least one minut
 The SDL2 renderer provides:
 
 - a four-way road with three incoming movement lanes per direction;
+- smart-road asphalt and intersection textures from `assets/smart-road-atlas.png`;
+- roadside neon-tree decoration outside the physical road area;
+- seven visual vehicle variants: EV sedan, sport GT, robo-taxi, transit bus, police interceptor, ambulance and fire engine;
 - animated vehicle rotation along curved turning paths;
-- vehicle sprites loaded from `assets/cars.bmp`;
-- blinking left/right turn signals;
+- blinking left/right turn signals rendered dynamically on every turning vehicle;
 - a live control/statistics panel;
 - an in-window final statistics screen that redraws continuously and presents at least one frame before processing close events;
 - automatic logical scaling to the available window size.
+
+Vehicle type is visual only: every variant uses the same tested `CAR_LEN` / `CAR_W` collision geometry and therefore does not alter the safety invariants. No LiDAR scan rings or traffic-light assets are rendered.
 
 Turning is represented by curved route geometry and continuous vehicle heading, so cars rotate through the maneuver instead of sliding sideways.
 
@@ -255,7 +260,7 @@ Main responsibilities:
 - `geometry` defines immutable paths, safety constants and the conflict matrix;
 - `controller` grants and releases reservations;
 - `simulation` owns the fixed-timestep update, kinematic braking and longitudinal following;
-- `vehicle` stores per-car motion and braking characteristics;
+- `vehicle` stores per-car motion, braking characteristics and visual variant;
 - `collision` implements OBB/SAT geometry;
 - `stats` collects runtime and final metrics;
 - `stats_screen` renders the final report;
@@ -269,7 +274,7 @@ smart-road/
 │   └── config.toml
 ├── assets/
 │   ├── README.md
-│   └── cars.bmp
+│   └── smart-road-atlas.png
 ├── src/
 │   ├── collision.rs
 │   ├── controller.rs
