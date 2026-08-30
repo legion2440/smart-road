@@ -5,11 +5,37 @@ use crate::geometry::{movement_id, Path, Route, MAX_ACCELERATION, MAX_BRAKING, S
 pub const MIN_DYNAMICS_FACTOR: f64 = 0.80;
 pub const MAX_DYNAMICS_FACTOR: f64 = 1.25;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VehicleVisual {
+    Sedan,
+    Sport,
+    RoboTaxi,
+    Bus,
+    Police,
+    Ambulance,
+    Fire,
+}
+
+impl VehicleVisual {
+    pub fn from_id(id: u64) -> Self {
+        match id.saturating_sub(1) % 7 {
+            0 => Self::Sedan,
+            1 => Self::Sport,
+            2 => Self::RoboTaxi,
+            3 => Self::Bus,
+            4 => Self::Police,
+            5 => Self::Ambulance,
+            _ => Self::Fire,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Vehicle {
     pub id: u64,
     pub origin: usize,
     pub route: Route,
+    pub visual: VehicleVisual,
     pub progress: f64,
     pub position: (f64, f64),
     pub angle: f64,
@@ -33,6 +59,7 @@ impl Vehicle {
             id,
             origin,
             route,
+            visual: VehicleVisual::from_id(id),
             progress: 0.0,
             position: (x, y),
             angle,
@@ -96,5 +123,16 @@ mod tests {
                 ..=MAX_BRAKING * MAX_DYNAMICS_FACTOR)
                 .contains(&vehicle.max_braking));
         }
+    }
+
+    #[test]
+    fn first_seven_vehicles_cover_all_visual_variants() {
+        assert_eq!(VehicleVisual::from_id(1), VehicleVisual::Sedan);
+        assert_eq!(VehicleVisual::from_id(2), VehicleVisual::Sport);
+        assert_eq!(VehicleVisual::from_id(3), VehicleVisual::RoboTaxi);
+        assert_eq!(VehicleVisual::from_id(4), VehicleVisual::Bus);
+        assert_eq!(VehicleVisual::from_id(5), VehicleVisual::Police);
+        assert_eq!(VehicleVisual::from_id(6), VehicleVisual::Ambulance);
+        assert_eq!(VehicleVisual::from_id(7), VehicleVisual::Fire);
     }
 }
