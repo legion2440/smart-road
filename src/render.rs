@@ -1,9 +1,10 @@
 //! Passive SDL rendering of the simulation state.
 
-use crate::geometry::{CAR_LEN, CX, CY, FIXED_HZ, H, LANE_W, ROAD_HALF, Route, W};
+use crate::geometry::{CAR_LEN, CAR_W, CX, CY, FIXED_HZ, H, LANE_W, ROAD_HALF, Route, W};
 use crate::simulation::Sim;
-use crate::sprites::{route_color, SpriteSet, CAR_TEXTURE_H, CAR_TEXTURE_W};
+use crate::sprites::{route_color, SpriteSet};
 use crate::ui_font::draw_text;
+use crate::vehicle::Vehicle;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
@@ -30,6 +31,29 @@ const TURN_SIGNAL: Color = Color::RGB(255, 166, 48);
 const TURN_SIGNAL_HALF_PERIOD_TICKS: u64 = FIXED_HZ as u64 / 3;
 const CONTROL_KEY_W: u32 = 72;
 const CONTROL_DESCRIPTION_X: i32 = 84;
+const VEHICLE_RENDER_LEN: u32 = 32;
+const VEHICLE_RENDER_MIN_W: u32 = 12;
+const VEHICLE_RENDER_MAX_W: u32 = 18;
+const TREE_SIZE: u32 = 42;
+
+const TREE_POSITIONS: [(i32, i32); 16] = [
+    (290, 80),
+    (610, 80),
+    (290, 200),
+    (610, 200),
+    (290, 700),
+    (610, 700),
+    (290, 820),
+    (610, 820),
+    (80, 290),
+    (200, 290),
+    (700, 290),
+    (820, 290),
+    (80, 610),
+    (200, 610),
+    (700, 610),
+    (820, 610),
+];
 
 pub fn draw(
     canvas: &mut Canvas<Window>,
@@ -41,26 +65,11 @@ pub fn draw(
     canvas.set_draw_color(BACKGROUND);
     canvas.clear();
 
-    draw_roads(canvas)?;
+    draw_trees(canvas, sprites)?;
+    draw_roads(canvas, sprites)?;
 
     for vehicle in &sim.vehicles {
-        let destination = Rect::from_center(
-            (
-                vehicle.position.0.round() as i32,
-                vehicle.position.1.round() as i32,
-            ),
-            CAR_TEXTURE_W,
-            CAR_TEXTURE_H,
-        );
-        canvas.copy_ex(
-            sprites.car(vehicle.route),
-            None,
-            Some(destination),
-            vehicle.angle.to_degrees(),
-            None,
-            false,
-            false,
-        )?;
+        draw_vehicle(canvas, sprites, vehicle)?;
 
         let path = &sim.paths[vehicle.origin][vehicle.route.index()];
         if turn_signal_visible(path, vehicle.route, vehicle.progress, sim.tick()) {
@@ -84,20 +93,90 @@ pub fn update_title(canvas: &mut Canvas<Window>, sim: &Sim, auto_spawn: bool, pa
     let _ = canvas.window_mut().set_title(&title);
 }
 
-fn draw_roads(canvas: &mut Canvas<Window>) -> Result<(), String> {
+fn draw_vehicle(
+    canvas: &mut Canvas<Window>,
+    sprites: &SpriteSet<'_>,
+    vehicle: &Vehicle,
+) -> Result<(), String> {
+    let source = sprites.vehicle_source(vehicle.visual);
+    let visual_width = ((VEHICLE_RENDER_LEN as f64 * source.width() as f64
+        / source.height() as f64)
+        .round() as u32)
+        .clamp(VEHICLE_RENDER_MIN_W, VEHICLE_RENDER_MAX_W);
+    let destination = Rect::from_center(
+        (
+            vehicle.position.0.round() as i32,
+            vehicle.position.1.round() as i32,
+        ),
+        visual_width,
+        VEHICLE_RENDER_LEN,
+    );
+
+    // Atlas vehicles face north. Path headings use mathematical radians where
+    // zero points east, so +90 degrees aligns the sprite nose with the route.
+    canvas.copy_ex(
+        sprites.atlas(),
+        Some(source),
+        Some(destination),
+        vehicle.angle.to_degrees() + 90.0,
+        None,
+        false,
+        false,
+    )
+}
+
+fn draw_trees(canvas: &mut Canvas<Window>, sprites: &SpriteSet<'_>) -> Result<(), String> {
+    let source = sprites.tree_source();
+    for &(x, y) in &TREE_POSITIONS {
+        canvas.copy(
+            sprites.atlas(),
+            Some(source),
+            Some(Rect::from_center((x, y), TREE_SIZE, TREE_SIZE)),
+        )?;
+    }
+    Ok(())
+}
+
+fn draw_roads(canvas: &mut Canvas<Window>, sprites: &SpriteSet<'_>) -> Result<(), String> {
+    let x0 = (CX - ROAD_HALF).round() as i32;
+    let y0 = (CY - ROAD_HALF).round() as i32;
+    let x1 = (CX + ROAD_HALF).round() as i32;
+    let y1 = (CY + ROAD_HALF).round() as i32;
+    let road_width = (ROAD_HALF * 2.0).round() as u32;
+
     canvas.set_draw_color(ASPHALT);
-    canvas.fill_rect(Rect::new(
-        (CX - ROAD_HALF).round() as i32,
-        0,
-        (ROAD_HALF * 2.0).round() as u32,
-        H,
-    ))?;
-    canvas.fill_rect(Rect::new(
-        0,
-        (CY - ROAD_HALF).round() as i32,
-        W,
-        (ROAD_HALF * 2.0).round() as u32,
-    ))?;
+    canvas.fill_rect(Rect::new(x0, 0, road_width, H))?;
+    canvas.fill_rect(Rect::new(0, y0, W, road_width))?;
+
+    let vertical = sprites.road_vertical_source();
+    canvas.copy(
+        sprites.atlas(),
+        Some(vertical),
+        Some(Rect::new(x0, 0, road_width, y0 as u32)),
+    )?;
+    canvas.copy(
+        sprites.atlas(),
+        Some(vertical),
+        Some(Rect::new(x0, y1, road_width, H - y1 as u32)),
+    )?;
+
+    let horizontal = sprites.road_horizontal_source();
+    canvas.copy(
+        sprites.atlas(),
+        Some(horizontal),
+        Some(Rect::new(0, y0, x0 as u32, road_width)),
+    )?;
+    canvas.copy(
+        sprites.atlas(),
+        Some(horizontal),
+        Some(Rect::new(x1, y0, W - x1 as u32, road_width)),
+    )?;
+
+    canvas.copy(
+        sprites.atlas(),
+        Some(sprites.intersection_source()),
+        Some(Rect::new(x0, y0, road_width, road_width)),
+    )?;
 
     canvas.set_draw_color(ROAD_EDGE);
     for x in [CX - ROAD_HALF, CX + ROAD_HALF] {
@@ -107,6 +186,9 @@ fn draw_roads(canvas: &mut Canvas<Window>) -> Result<(), String> {
         canvas.draw_line((0, y.round() as i32), (W as i32, y.round() as i32))?;
     }
 
+    // The source road textures provide the asphalt/smart-road styling. These
+    // procedural marks remain authoritative because they match the 12 physical
+    // movement paths exactly.
     for offset in [-2.0, -1.0, 0.0, 1.0, 2.0] {
         let x = CX + offset * LANE_W;
         let y = CY + offset * LANE_W;
@@ -208,16 +290,13 @@ fn turn_signal_visible(
         && (tick / TURN_SIGNAL_HALF_PERIOD_TICKS) % 2 == 0
 }
 
-fn draw_turn_signal(
-    canvas: &mut Canvas<Window>,
-    vehicle: &crate::vehicle::Vehicle,
-) -> Result<(), String> {
+fn draw_turn_signal(canvas: &mut Canvas<Window>, vehicle: &Vehicle) -> Result<(), String> {
     let forward = (vehicle.angle.cos(), vehicle.angle.sin());
     let side = (-forward.1, forward.0);
     let longitudinal_offset = CAR_LEN / 2.0 - 1.5;
     let lateral_offset = match vehicle.route {
-        Route::Left => -(crate::geometry::CAR_W / 2.0 - 2.5),
-        Route::Right => crate::geometry::CAR_W / 2.0 - 2.5,
+        Route::Left => -(CAR_W / 2.0 - 2.5),
+        Route::Right => CAR_W / 2.0 - 2.5,
         Route::Straight => return Ok(()),
     };
 
@@ -227,8 +306,8 @@ fn draw_turn_signal(
         let y = vehicle.position.1 + forward.1 * longitudinal + side.1 * lateral_offset;
         canvas.fill_rect(Rect::from_center(
             (x.round() as i32, y.round() as i32),
-            3,
-            3,
+            4,
+            4,
         ))?;
     }
     Ok(())
