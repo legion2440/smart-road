@@ -10,7 +10,13 @@ use sdl2::render::{BlendMode, Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use std::io::Cursor;
 
-const ATLAS_PNG: &[u8] = include_bytes!("../assets/smart-road-atlas.png");
+const ATLAS_B64_PARTS: [&str; 4] = [
+    include_str!("../assets/smart-road-atlas.part1.b64"),
+    include_str!("../assets/smart-road-atlas.part2.b64"),
+    include_str!("../assets/smart-road-atlas.part3.b64"),
+    include_str!("../assets/smart-road-atlas.part4.b64"),
+];
+const EXPECTED_ATLAS_PNG_LEN: usize = 12_279;
 const ATLAS_W: u32 = 512;
 const ATLAS_H: u32 = 896;
 
@@ -39,7 +45,8 @@ impl<'a> SpriteSet<'a> {
             return Err("failed to enable linear texture sampling".to_string());
         }
 
-        let atlas = load_png_texture(creator, ATLAS_PNG, "smart-road-atlas.png")?;
+        let atlas_png = decode_embedded_atlas()?;
+        let atlas = load_png_texture(creator, &atlas_png, "smart-road atlas")?;
         let query = atlas.query();
         if query.width != ATLAS_W || query.height != ATLAS_H {
             return Err(format!(
@@ -94,6 +101,68 @@ pub fn route_color(route: Route) -> Color {
 
 fn rect((x, y, width, height): (i32, i32, u32, u32)) -> Rect {
     Rect::new(x, y, width, height)
+}
+
+fn decode_embedded_atlas() -> Result<Vec<u8>, String> {
+    let encoded: String = ATLAS_B64_PARTS
+        .iter()
+        .flat_map(|part| part.chars())
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect();
+    let bytes = decode_base64(&encoded)?;
+
+    if bytes.len() != EXPECTED_ATLAS_PNG_LEN {
+        return Err(format!(
+            "invalid embedded smart-road atlas size: expected {} bytes, got {}",
+            EXPECTED_ATLAS_PNG_LEN,
+            bytes.len()
+        ));
+    }
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("embedded smart-road atlas does not have a PNG signature".to_string());
+    }
+
+    Ok(bytes)
+}
+
+fn decode_base64(encoded: &str) -> Result<Vec<u8>, String> {
+    if encoded.len() % 4 != 0 {
+        return Err(format!(
+            "invalid embedded atlas base64 length: {}",
+            encoded.len()
+        ));
+    }
+
+    let mut output = Vec::with_capacity(encoded.len() / 4 * 3);
+    for chunk in encoded.as_bytes().chunks_exact(4) {
+        let a = base64_value(chunk[0])? as u32;
+        let b = base64_value(chunk[1])? as u32;
+        let c_padding = chunk[2] == b'=';
+        let d_padding = chunk[3] == b'=';
+        let c = if c_padding { 0 } else { base64_value(chunk[2])? as u32 };
+        let d = if d_padding { 0 } else { base64_value(chunk[3])? as u32 };
+        let value = (a << 18) | (b << 12) | (c << 6) | d;
+
+        output.push((value >> 16) as u8);
+        if !c_padding {
+            output.push((value >> 8) as u8);
+        }
+        if !d_padding {
+            output.push(value as u8);
+        }
+    }
+    Ok(output)
+}
+
+fn base64_value(byte: u8) -> Result<u8, String> {
+    match byte {
+        b'A'..=b'Z' => Ok(byte - b'A'),
+        b'a'..=b'z' => Ok(byte - b'a' + 26),
+        b'0'..=b'9' => Ok(byte - b'0' + 52),
+        b'+' => Ok(62),
+        b'/' => Ok(63),
+        _ => Err(format!("invalid character in embedded atlas base64: {byte}")),
+    }
 }
 
 fn load_png_texture<'a>(
