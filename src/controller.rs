@@ -4,7 +4,9 @@
 //! movement reservations to several non-conflicting lanes at the same time and
 //! lets blocked vehicles approach at a reduced speed until their route is safe.
 
-use crate::geometry::{build_conflict_matrix, ConflictMatrix, Path, MOVEMENT_COUNT, SLOW_ZONE};
+use crate::geometry::{
+    build_conflict_matrix, ConflictMatrix, Path, Route, MOVEMENT_COUNT, SLOW_ZONE,
+};
 use crate::vehicle::Vehicle;
 
 const RESERVATION_LOOKAHEAD: f64 = 160.0;
@@ -22,6 +24,15 @@ impl IntersectionManager {
 
     pub fn update(&self, paths: &[[Path; 3]; 4], vehicles: &mut [Vehicle]) {
         for vehicle in vehicles.iter_mut() {
+            // Dedicated right-turn lanes stay outside the crossing trajectories.
+            // They never participate in intersection reservations; longitudinal
+            // following is the only control they need.
+            if vehicle.route == Route::Right {
+                vehicle.reserved = false;
+                vehicle.wait_ticks = 0;
+                continue;
+            }
+
             let path = &paths[vehicle.origin][vehicle.route.index()];
             if vehicle.reserved && vehicle.progress >= path.conflict_exit {
                 vehicle.reserved = false;
@@ -30,7 +41,7 @@ impl IntersectionManager {
 
         let mut active_movements = Vec::new();
         for vehicle in vehicles.iter() {
-            if vehicle.reserved {
+            if vehicle.reserved && vehicle.route != Route::Right {
                 active_movements.push(vehicle.movement_id());
             }
         }
@@ -39,7 +50,10 @@ impl IntersectionManager {
         let mut front_candidate: [Option<usize>; MOVEMENT_COUNT] = [None; MOVEMENT_COUNT];
 
         for (index, vehicle) in vehicles.iter().enumerate() {
-            if vehicle.detected_tick.is_none() || vehicle.reserved {
+            if vehicle.route == Route::Right
+                || vehicle.detected_tick.is_none()
+                || vehicle.reserved
+            {
                 continue;
             }
             let movement = vehicle.movement_id();
@@ -90,7 +104,10 @@ impl IntersectionManager {
         }
 
         for vehicle in vehicles.iter_mut() {
-            if vehicle.detected_tick.is_some() && !vehicle.reserved {
+            if vehicle.route != Route::Right
+                && vehicle.detected_tick.is_some()
+                && !vehicle.reserved
+            {
                 vehicle.wait_ticks = vehicle.wait_ticks.saturating_add(1);
             }
         }
@@ -98,6 +115,13 @@ impl IntersectionManager {
 
     pub fn target_speed(&self, path: &Path, vehicle: &Vehicle) -> f64 {
         use crate::geometry::{SPEED_CRUISE, SPEED_SLOW, SPEED_STOP};
+
+        // Right turns are physically separated from crossing trajectories and
+        // therefore remain free-flow. Same-lane car following may still reduce
+        // speed when another right-turning vehicle is directly ahead.
+        if vehicle.route == Route::Right {
+            return SPEED_CRUISE;
+        }
 
         if vehicle.detected_tick.is_none()
             || vehicle.reserved
