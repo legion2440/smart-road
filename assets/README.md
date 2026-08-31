@@ -2,9 +2,9 @@
 
 Runtime visual assets used by the SDL2 renderer.
 
-- `smart-road-atlas.png` — vehicle, road, intersection, crosswalk and roadside-tree sprites used by the simulation.
+The smart-road atlas is stored as verified Base64 text chunks and reconstructed in memory at startup. This avoids binary transport corruption while preserving the original PNG bytes exactly.
 
-Vehicle visuals included in the atlas:
+The atlas contains:
 
 - autonomous EV sedan;
 - cyber sport GT;
@@ -12,6 +12,9 @@ Vehicle visuals included in the atlas:
 - smart electric transit bus;
 - smart police interceptor;
 - smart cyber ambulance;
-- smart rescue fire engine.
+- smart rescue fire engine;
+- horizontal and vertical smart-road textures;
+- four-way intersection texture;
+- roadside neon-tree sprite.
 
-The visual vehicle type does not change collision geometry or the smart-intersection safety model.
+The visual vehicle type does not change collision geometry or the smart-intersection safety model. Traffic-light assets and LiDAR scan rings are not used.
