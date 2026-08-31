@@ -1,10 +1,10 @@
 //! Passive SDL rendering of the simulation state.
 
-use crate::geometry::{CAR_LEN, CAR_W, CX, CY, FIXED_HZ, H, LANE_W, ROAD_HALF, Route, W};
+use crate::geometry::{CAR_LEN, CX, CY, FIXED_HZ, H, LANE_W, ROAD_HALF, Route, W};
 use crate::simulation::Sim;
 use crate::sprites::{route_color, SpriteSet};
 use crate::ui_font::draw_text;
-use crate::vehicle::Vehicle;
+use crate::vehicle::{Vehicle, VehicleVisual};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
@@ -14,10 +14,10 @@ pub const PANEL_W: u32 = 300;
 pub const CANVAS_W: u32 = W + PANEL_W;
 
 const BACKGROUND: Color = Color::RGB(35, 43, 38);
-const ASPHALT: Color = Color::RGB(42, 44, 50);
-const ROAD_EDGE: Color = Color::RGB(205, 208, 214);
-const LANE_MARK: Color = Color::RGB(130, 134, 143);
-const CENTER_MARK: Color = Color::RGB(225, 190, 74);
+const ASPHALT: Color = Color::RGB(29, 45, 64);
+const ROAD_EDGE: Color = Color::RGB(105, 123, 139);
+const LANE_MARK: Color = Color::RGB(145, 157, 170);
+const CENTER_MARK: Color = Color::RGB(239, 201, 73);
 const STOP_LINE: Color = Color::RGB(235, 235, 240);
 const PANEL_BG: Color = Color::RGB(20, 21, 31);
 const CARD_BG: Color = Color::RGB(27, 29, 41);
@@ -31,9 +31,6 @@ const TURN_SIGNAL: Color = Color::RGB(255, 166, 48);
 const TURN_SIGNAL_HALF_PERIOD_TICKS: u64 = FIXED_HZ as u64 / 3;
 const CONTROL_KEY_W: u32 = 72;
 const CONTROL_DESCRIPTION_X: i32 = 84;
-const VEHICLE_RENDER_LEN: u32 = 32;
-const VEHICLE_RENDER_MIN_W: u32 = 12;
-const VEHICLE_RENDER_MAX_W: u32 = 18;
 const TREE_SIZE: u32 = 42;
 
 const TREE_POSITIONS: [(i32, i32); 16] = [
@@ -66,7 +63,7 @@ pub fn draw(
     canvas.clear();
 
     draw_trees(canvas, sprites)?;
-    draw_roads(canvas, sprites)?;
+    draw_roads(canvas)?;
 
     for vehicle in &sim.vehicles {
         draw_vehicle(canvas, sprites, vehicle)?;
@@ -93,23 +90,32 @@ pub fn update_title(canvas: &mut Canvas<Window>, sim: &Sim, auto_spawn: bool, pa
     let _ = canvas.window_mut().set_title(&title);
 }
 
+fn vehicle_render_size(visual: VehicleVisual) -> (u32, u32) {
+    match visual {
+        VehicleVisual::Sedan => (16, 32),
+        VehicleVisual::Sport => (16, 32),
+        VehicleVisual::RoboTaxi => (17, 30),
+        VehicleVisual::Bus => (18, 46),
+        VehicleVisual::Police => (16, 32),
+        VehicleVisual::Ambulance => (19, 40),
+        VehicleVisual::Fire => (19, 44),
+    }
+}
+
 fn draw_vehicle(
     canvas: &mut Canvas<Window>,
     sprites: &SpriteSet<'_>,
     vehicle: &Vehicle,
 ) -> Result<(), String> {
     let source = sprites.vehicle_source(vehicle.visual);
-    let visual_width = ((VEHICLE_RENDER_LEN as f64 * source.width() as f64
-        / source.height() as f64)
-        .round() as u32)
-        .clamp(VEHICLE_RENDER_MIN_W, VEHICLE_RENDER_MAX_W);
+    let (visual_width, visual_length) = vehicle_render_size(vehicle.visual);
     let destination = Rect::from_center(
         (
             vehicle.position.0.round() as i32,
             vehicle.position.1.round() as i32,
         ),
         visual_width,
-        VEHICLE_RENDER_LEN,
+        visual_length,
     );
 
     // Atlas vehicles face north. Path headings use mathematical radians where
@@ -137,67 +143,73 @@ fn draw_trees(canvas: &mut Canvas<Window>, sprites: &SpriteSet<'_>) -> Result<()
     Ok(())
 }
 
-fn draw_roads(canvas: &mut Canvas<Window>, sprites: &SpriteSet<'_>) -> Result<(), String> {
+fn draw_roads(canvas: &mut Canvas<Window>) -> Result<(), String> {
     let x0 = (CX - ROAD_HALF).round() as i32;
     let y0 = (CY - ROAD_HALF).round() as i32;
     let x1 = (CX + ROAD_HALF).round() as i32;
     let y1 = (CY + ROAD_HALF).round() as i32;
     let road_width = (ROAD_HALF * 2.0).round() as u32;
 
+    // One 240 px carriageway = six 40 px lanes: three lanes in each direction.
+    // The visual markings are generated from the same LANE_W geometry as the
+    // physical paths, so there is no second incompatible lane layout underneath.
     canvas.set_draw_color(ASPHALT);
     canvas.fill_rect(Rect::new(x0, 0, road_width, H))?;
     canvas.fill_rect(Rect::new(0, y0, W, road_width))?;
 
-    let vertical = sprites.road_vertical_source();
-    canvas.copy(
-        sprites.atlas(),
-        Some(vertical),
-        Some(Rect::new(x0, 0, road_width, y0 as u32)),
-    )?;
-    canvas.copy(
-        sprites.atlas(),
-        Some(vertical),
-        Some(Rect::new(x0, y1, road_width, H - y1 as u32)),
-    )?;
+    draw_road_edges(canvas, x0, y0, x1, y1)?;
 
-    let horizontal = sprites.road_horizontal_source();
-    canvas.copy(
-        sprites.atlas(),
-        Some(horizontal),
-        Some(Rect::new(0, y0, x0 as u32, road_width)),
-    )?;
-    canvas.copy(
-        sprites.atlas(),
-        Some(horizontal),
-        Some(Rect::new(x1, y0, W - x1 as u32, road_width)),
-    )?;
-
-    canvas.copy(
-        sprites.atlas(),
-        Some(sprites.intersection_source()),
-        Some(Rect::new(x0, y0, road_width, road_width)),
-    )?;
-
-    canvas.set_draw_color(ROAD_EDGE);
-    for x in [CX - ROAD_HALF, CX + ROAD_HALF] {
-        canvas.draw_line((x.round() as i32, 0), (x.round() as i32, H as i32))?;
-    }
-    for y in [CY - ROAD_HALF, CY + ROAD_HALF] {
-        canvas.draw_line((0, y.round() as i32), (W as i32, y.round() as i32))?;
+    // Two dashed separators on either side of the directional divider produce
+    // exactly three lanes per travel direction.
+    for offset in [-2.0, -1.0, 1.0, 2.0] {
+        draw_vertical_lane(canvas, CX + offset * LANE_W, LANE_MARK)?;
+        draw_horizontal_lane(canvas, CY + offset * LANE_W, LANE_MARK)?;
     }
 
-    // The source road textures provide the asphalt/smart-road styling. These
-    // procedural marks remain authoritative because they match the 12 physical
-    // movement paths exactly.
-    for offset in [-2.0, -1.0, 0.0, 1.0, 2.0] {
-        let x = CX + offset * LANE_W;
-        let y = CY + offset * LANE_W;
-        let color = if offset == 0.0 { CENTER_MARK } else { LANE_MARK };
-        draw_vertical_lane(canvas, x, color)?;
-        draw_horizontal_lane(canvas, y, color)?;
-    }
-
+    draw_center_divider(canvas, x0, y0, x1, y1)?;
     draw_stop_lines(canvas)?;
+    Ok(())
+}
+
+fn draw_road_edges(
+    canvas: &mut Canvas<Window>,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+) -> Result<(), String> {
+    canvas.set_draw_color(ROAD_EDGE);
+
+    for x in [x0, x1] {
+        canvas.draw_line((x, 0), (x, y0))?;
+        canvas.draw_line((x, y1), (x, H as i32))?;
+    }
+    for y in [y0, y1] {
+        canvas.draw_line((0, y), (x0, y))?;
+        canvas.draw_line((x1, y), (W as i32, y))?;
+    }
+    Ok(())
+}
+
+fn draw_center_divider(
+    canvas: &mut Canvas<Window>,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+) -> Result<(), String> {
+    canvas.set_draw_color(CENTER_MARK);
+    let cx = CX.round() as i32;
+    let cy = CY.round() as i32;
+
+    for x in [cx - 2, cx + 2] {
+        canvas.draw_line((x, 0), (x, y0))?;
+        canvas.draw_line((x, y1), (x, H as i32))?;
+    }
+    for y in [cy - 2, cy + 2] {
+        canvas.draw_line((0, y), (x0, y))?;
+        canvas.draw_line((x1, y), (W as i32, y))?;
+    }
     Ok(())
 }
 
@@ -243,8 +255,8 @@ fn draw_dashed_line(
     color: Color,
 ) -> Result<(), String> {
     canvas.set_draw_color(color);
-    let dash = 14;
-    let gap = 12;
+    let dash = 16;
+    let gap = 14;
     let mut cursor = if vertical { start.1 } else { start.0 };
     let limit = if vertical { end.1 } else { end.0 };
     while cursor < limit {
@@ -267,6 +279,8 @@ fn draw_stop_lines(canvas: &mut Canvas<Window>) -> Result<(), String> {
     let y0 = (CY - ROAD_HALF).round() as i32;
     let y1 = CY.round() as i32;
 
+    // Only the three incoming lanes receive a stop boundary. Right-turn traffic
+    // does not use it operationally, but the line still marks the approach.
     canvas.fill_rect(Rect::new(x0, y0 - 5, half, 4))?;
     canvas.fill_rect(Rect::new(x1, (CY + ROAD_HALF).round() as i32 + 1, half, 4))?;
     canvas.fill_rect(Rect::new((CX + ROAD_HALF).round() as i32 + 1, y0, 4, half))?;
@@ -293,10 +307,11 @@ fn turn_signal_visible(
 fn draw_turn_signal(canvas: &mut Canvas<Window>, vehicle: &Vehicle) -> Result<(), String> {
     let forward = (vehicle.angle.cos(), vehicle.angle.sin());
     let side = (-forward.1, forward.0);
-    let longitudinal_offset = CAR_LEN / 2.0 - 1.5;
+    let (visual_width, visual_length) = vehicle_render_size(vehicle.visual);
+    let longitudinal_offset = visual_length as f64 / 2.0 - 2.0;
     let lateral_offset = match vehicle.route {
-        Route::Left => -(CAR_W / 2.0 - 2.5),
-        Route::Right => CAR_W / 2.0 - 2.5,
+        Route::Left => -(visual_width as f64 / 2.0 - 1.0),
+        Route::Right => visual_width as f64 / 2.0 - 1.0,
         Route::Straight => return Ok(()),
     };
 
@@ -306,8 +321,8 @@ fn draw_turn_signal(canvas: &mut Canvas<Window>, vehicle: &Vehicle) -> Result<()
         let y = vehicle.position.1 + forward.1 * longitudinal + side.1 * lateral_offset;
         canvas.fill_rect(Rect::from_center(
             (x.round() as i32, y.round() as i32),
-            4,
-            4,
+            2,
+            2,
         ))?;
     }
     Ok(())
@@ -351,7 +366,11 @@ fn draw_panel(
     let waiting = sim
         .vehicles
         .iter()
-        .filter(|vehicle| vehicle.detected_tick.is_some() && !vehicle.reserved)
+        .filter(|vehicle| {
+            vehicle.route != Route::Right
+                && vehicle.detected_tick.is_some()
+                && !vehicle.reserved
+        })
         .count();
     draw_text(
         canvas,
