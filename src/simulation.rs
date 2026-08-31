@@ -129,7 +129,11 @@ impl Sim {
             let path = &self.paths[vehicle.origin][vehicle.route.index()];
             let mut target = self.manager.target_speed(path, vehicle);
 
-            if vehicle.detected_tick.is_some()
+            // Dedicated right turns are free-flow and never stop for an
+            // intersection reservation. Their only possible speed reduction is
+            // longitudinal following behind another car on the same route.
+            if vehicle.route != Route::Right
+                && vehicle.detected_tick.is_some()
                 && !vehicle.reserved
                 && vehicle.progress < path.stop_progress
             {
@@ -150,7 +154,8 @@ impl Sim {
             );
             let mut progress = (vehicle.progress + next_velocity * FIXED_DT).min(path.len);
 
-            if vehicle.detected_tick.is_some()
+            if vehicle.route != Route::Right
+                && vehicle.detected_tick.is_some()
                 && !vehicle.reserved
                 && vehicle.progress <= path.stop_progress + EPSILON
                 && progress > path.stop_progress
@@ -362,6 +367,32 @@ mod tests {
             sim.step();
             for vehicle in &sim.vehicles {
                 minimum = minimum.min(vehicle.velocity);
+            }
+        }
+
+        assert!(minimum > SPEED_SLOW);
+        assert_eq!(sim.stats.emergency_clamps, 0);
+    }
+
+    #[test]
+    fn right_turn_is_free_flow_without_a_leader() {
+        let mut sim = Sim::new();
+        assert!(sim.spawn_exact(3, Route::Right));
+        let right_id = sim.vehicles[0].id;
+        let mut minimum = SPEED_CRUISE;
+
+        // Add crossing traffic that would require reservations for straight/left
+        // movements. The right-turning car must ignore those reservations.
+        let _ = sim.spawn_exact(0, Route::Straight);
+        let _ = sim.spawn_exact(1, Route::Left);
+        let _ = sim.spawn_exact(2, Route::Straight);
+
+        while sim.vehicles.iter().any(|vehicle| vehicle.id == right_id) {
+            sim.step();
+            if let Some(vehicle) = sim.vehicles.iter().find(|vehicle| vehicle.id == right_id) {
+                minimum = minimum.min(vehicle.velocity);
+                assert_eq!(vehicle.wait_ticks, 0);
+                assert!(!vehicle.reserved);
             }
         }
 
