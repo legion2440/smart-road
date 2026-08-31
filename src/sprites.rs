@@ -10,8 +10,12 @@ use sdl2::render::{BlendMode, Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use std::io::Cursor;
 
-const ATLAS_B64_PARTS: [&str; 4] = [
-    include_str!("../assets/smart-road-atlas.part1.b64"),
+const ATLAS_B64_PARTS: [&str; 8] = [
+    include_str!("../assets/smart-road-atlas.part1a1.b64"),
+    include_str!("../assets/smart-road-atlas.part1a2.b64"),
+    include_str!("../assets/smart-road-atlas.part1a3.b64"),
+    include_str!("../assets/smart-road-atlas.part1a4.b64"),
+    include_str!("../assets/smart-road-atlas.part1b.b64"),
     include_str!("../assets/smart-road-atlas.part2.b64"),
     include_str!("../assets/smart-road-atlas.part3.b64"),
     include_str!("../assets/smart-road-atlas.part4.b64"),
