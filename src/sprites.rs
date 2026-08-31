@@ -24,13 +24,16 @@ const EXPECTED_ATLAS_PNG_LEN: usize = 12_279;
 const ATLAS_W: u32 = 512;
 const ATLAS_H: u32 = 896;
 
-const SEDAN: (i32, i32, u32, u32) = (0, 0, 88, 176);
-const SPORT: (i32, i32, u32, u32) = (96, 0, 92, 184);
-const ROBOTAXI: (i32, i32, u32, u32) = (196, 0, 84, 144);
-const POLICE: (i32, i32, u32, u32) = (288, 0, 88, 176);
-const AMBULANCE: (i32, i32, u32, u32) = (384, 0, 96, 208);
-const BUS: (i32, i32, u32, u32) = (0, 216, 96, 280);
-const FIRE: (i32, i32, u32, u32) = (104, 216, 104, 272);
+// Vehicle source rectangles crop transparent side gutters from the generated PNGs.
+// This makes the rendered body fill its visual bounding box, so dynamic turn
+// indicators sit on the body instead of floating beside it.
+const SEDAN: (i32, i32, u32, u32) = (7, 0, 74, 176);
+const SPORT: (i32, i32, u32, u32) = (103, 0, 78, 184);
+const ROBOTAXI: (i32, i32, u32, u32) = (202, 0, 72, 144);
+const POLICE: (i32, i32, u32, u32) = (295, 0, 74, 176);
+const AMBULANCE: (i32, i32, u32, u32) = (392, 0, 80, 208);
+const BUS: (i32, i32, u32, u32) = (8, 216, 80, 280);
+const FIRE: (i32, i32, u32, u32) = (113, 216, 86, 272);
 const TREE: (i32, i32, u32, u32) = (216, 216, 112, 112);
 
 pub struct SpriteSet<'a> {
