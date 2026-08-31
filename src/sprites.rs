@@ -32,9 +32,6 @@ const AMBULANCE: (i32, i32, u32, u32) = (384, 0, 96, 208);
 const BUS: (i32, i32, u32, u32) = (0, 216, 96, 280);
 const FIRE: (i32, i32, u32, u32) = (104, 216, 104, 272);
 const TREE: (i32, i32, u32, u32) = (216, 216, 112, 112);
-const ROAD_H: (i32, i32, u32, u32) = (0, 504, 192, 192);
-const ROAD_V: (i32, i32, u32, u32) = (200, 504, 192, 192);
-const INTERSECTION: (i32, i32, u32, u32) = (0, 704, 192, 192);
 
 pub struct SpriteSet<'a> {
     atlas: Texture<'a>,
@@ -76,18 +73,6 @@ impl<'a> SpriteSet<'a> {
             VehicleVisual::Ambulance => AMBULANCE,
             VehicleVisual::Fire => FIRE,
         })
-    }
-
-    pub fn road_horizontal_source(&self) -> Rect {
-        rect(ROAD_H)
-    }
-
-    pub fn road_vertical_source(&self) -> Rect {
-        rect(ROAD_V)
-    }
-
-    pub fn intersection_source(&self) -> Rect {
-        rect(INTERSECTION)
     }
 
     pub fn tree_source(&self) -> Rect {
